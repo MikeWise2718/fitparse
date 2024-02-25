@@ -2,7 +2,8 @@
 
 # Make classes available
 from fitparse.base import FitFile, FitFileDecoder, UncachedFitFile, \
-                          FitParseError, CacheMixin, DataProcessorMixin
+                          FitParseError, CacheMixin, DataProcessorMixin, \
+                          UncachedFitFile
 from fitparse.records import DataMessage
 from fitparse.processors import FitFileDataProcessor, StandardUnitsDataProcessor
 

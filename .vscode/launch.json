@@ -1,0 +1,34 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "vo2max",
+            "type": "python",
+            "request": "launch",
+            "program": "print_records.py",
+            "args": ["-a","vo2max","-ff", "d:/fit/run_langen_2024_02_21/14066893001_ACTIVITY.fit"],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "vo2max_dir",
+            "type": "python",
+            "request": "launch",
+            "program": "print_records.py",
+            "args": ["-a","vo2max","-fd", "d:/fit/fit_run"],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "list",
+            "type": "python",
+            "request": "launch",
+            "program": "print_records.py",
+            "args": ["-a","list","-ff", "d:/fit/run_langen_2024_02_21/14066893001_ACTIVITY.fit"],
+            "console": "integratedTerminal"
+        },
+
+
+    ]
+}
