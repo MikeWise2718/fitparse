@@ -8,7 +8,7 @@
             "name": "vo2max",
             "type": "python",
             "request": "launch",
-            "program": "print_records.py",
+            "program": "fitparse.py",
             "args": ["-a","vo2max","-ff", "d:/fit/run_langen_2024_02_21/14066893001_ACTIVITY.fit"],
             "console": "integratedTerminal"
         },
@@ -16,7 +16,7 @@
             "name": "vo2max_dir",
             "type": "python",
             "request": "launch",
-            "program": "print_records.py",
+            "program": "fitparse.py",
             "args": ["-a","vo2max","-fd", "d:/fit/fit_run"],
             "console": "integratedTerminal"
         },
@@ -24,7 +24,7 @@
             "name": "list",
             "type": "python",
             "request": "launch",
-            "program": "print_records.py",
+            "program": "fitparse.py",
             "args": ["-a","list","-ff", "d:/fit/run_langen_2024_02_21/14066893001_ACTIVITY.fit"],
             "console": "integratedTerminal"
         },
