@@ -1,0 +1,1 @@
+python fitparse.py -fd d:/fit/fit_run -a vo2max

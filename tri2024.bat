@@ -1,0 +1,1 @@
+python fitparse.py -ff d:/fit/fit_tri/2024-07-28-09-44-53.fit -a list
