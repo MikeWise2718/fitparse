@@ -356,6 +356,7 @@ read-only) · Strava or other sources (the importer is source-agnostic if that c
 3. **Stale archive** is solved by automating export (§6), not by another manual pull.
 4. **Keep Flask-SQLAlchemy**; bulk-insert `records` with `executemany`.
 
+5. **Garmin MFA: believed off** (to be confirmed by the S.1 smoke test). So login can run non-interactively from `$GARMIN_EMAIL` / `$GARMIN_PASSWORD` for that one invocation — no TTY needed over SSH to munchlax. The MFA prompt path stays in the code (Garmin can turn it on), but re-login is a one-liner, not a chore.
+
 ## 10. Open questions
-1. Does the Garmin account use MFA? (Decides how painful re-login on munchlax is when refresh tokens eventually lapse.)
-2. Phase B health data includes sleep and HRV history on a LAN app with no auth — still fine, or does that tip it toward adding the login flow?
+1. Phase B health data includes sleep and HRV history on a LAN app with no auth — still fine, or does that tip it toward adding the login flow?
