@@ -14,12 +14,12 @@
         <span>Fitmon <small style="font-size: 0.5em; color: #666;">v{{ version }}</small></span>
     </h1>
     <div id="insecure" class="banner" style="display:none">
-        This page is not on HTTPS, so a login will not stick. Use the Tailscale address instead.
+        This page is on plain HTTP, where browsers discard the login cookie, so sign-in is refused here. Use the HTTPS (Tailscale) address, or <code>http://localhost:8640</code> on the machine that runs fitmon.
     </div>
     <form id="login-form">
         <label class="field"><span>Username</span><input id="login-username" autocomplete="username" required autofocus></label>
         <label class="field"><span>Password</span><input id="login-password" type="password" autocomplete="current-password" required></label>
-        <label class="row" style="margin-bottom:12px"><input id="login-remember" type="checkbox" checked> Remember me on this device (90 days)</label>
+        <label class="row" style="margin-bottom:12px"><input id="login-remember" type="checkbox" checked> Remember me in this browser (90 days)</label>
         <button class="primary" type="submit">Sign in</button>
         <p id="login-error" class="down"></p>
     </form>
@@ -41,8 +41,8 @@ document.getElementById('login-form').addEventListener('submit', async (ev) => {
         })});
     if (resp.ok) { location.href = '/'; return; }
     const body = await resp.json().catch(() => ({}));
-    err.textContent = body.error === 'too_many_attempts'
-        ? `Too many attempts. Try again in ${body.retry_after} s.` : 'Wrong username or password.';
+    err.textContent = body.error === 'too_many_attempts' ? `Too many attempts. Try again in ${body.retry_after} s.`
+        : body.error === 'https_required' ? body.message : 'Wrong username or password.';
 });
 </script>
 </body>

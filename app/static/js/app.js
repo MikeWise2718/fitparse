@@ -428,7 +428,7 @@ async function loadSettings() {
     $('set-units').value = s.units; $('set-week').value = s.week_start; $('set-range').value = s.default_range_days; $('set-load').value = s.load_model;
     $('set-maxhr').value = s.zones.max_hr || ''; $('set-lthr').value = s.zones.threshold_hr || ''; $('set-rhr').value = s.zones.resting_hr || ''; $('set-ftp').value = s.zones.ftp || '';
     const d = await api('/api/auth/devices');
-    table('set-devices', [{label: 'Device', get: (t) => (t.device_name || '').slice(0, 60)}, {label: 'Last used', get: (t) => fmt.when(t.last_used_at)}, {label: 'Expires', get: (t) => fmt.day(t.expires_at)},
+    table('set-devices', [{label: 'Browser', get: (t) => (t.device_name || '').slice(0, 60)}, {label: 'Signed in', get: (t) => fmt.when(t.created_at)}, {label: 'Last used', get: (t) => fmt.when(t.last_used_at)}, {label: 'Expires', get: (t) => fmt.day(t.expires_at)},
         {label: '', html: (t) => t.current ? '<span class="tag good">this one</span>' : `<button data-t="${t.id}">Sign out</button>`}], d.devices);
     $('set-devices').querySelectorAll('button').forEach((b) => b.addEventListener('click', async () => { await api(`/api/auth/devices/${b.dataset.t}/revoke`, {method: 'POST'}); loadSettings(); }));
 }

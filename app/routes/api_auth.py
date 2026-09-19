@@ -1,4 +1,4 @@
-from flask import Blueprint, g, jsonify, make_response, request, session
+from flask import Blueprint, current_app, g, jsonify, make_response, request, session
 from werkzeug.security import check_password_hash
 
 from .. import auth
@@ -22,6 +22,16 @@ def _audit() -> dict:
 
 @auth_bp.route('/api/auth/login', methods=['POST'])
 def login():
+    # Auth cookies are Secure, and a browser silently drops a Secure cookie that arrives over
+    # plain HTTP from anything but localhost. Without this check the password is accepted, the
+    # cookie is discarded, and the user lands back on the login form convinced it was wrong.
+    if current_app.config['SESSION_COOKIE_SECURE'] and not request.is_secure \
+            and request.host.split(':')[0] not in ('localhost', '127.0.0.1'):
+        return jsonify({'error': 'https_required',
+                        'message': 'Sign-in only works over HTTPS (the Tailscale address) or on '
+                                   'http://localhost - over plain HTTP the browser would discard '
+                                   'the login cookie.'}), 400
+
     data = request.get_json(silent=True) or {}
     username = auth.normalize_username(data.get('username'))
     password = data.get('password') or ''

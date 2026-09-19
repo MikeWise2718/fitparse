@@ -64,6 +64,11 @@ def main() -> int:
     app = create_app()
     with app.app_context():
         if args.command == 'create-user':
+            # Check before prompting: nobody should type a password twice to learn the name is taken.
+            if User.query.filter_by(username=auth.normalize_username(args.username)).first():
+                console.print(f'[red]That username is taken.[/red] To change its password: '
+                              f'fitmon-admin reset-password -u {args.username}')
+                return 1
             try:
                 user = auth.create_user(args.username, _password(args),
                                         role='admin' if args.admin else 'user', display_name=args.name)
@@ -81,7 +86,7 @@ def main() -> int:
             user.password_hash = auth.hash_password(password)
             db.session.commit()
             n = auth.revoke_all_tokens(user.id)
-            console.print(f'[green]Password reset[/green] for {user.username}; {n} device(s) logged out')
+            console.print(f'[green]Password reset[/green] for {user.username}; {n} remembered session(s) ended')
         elif args.command == 'list-users':
             table = Table(header_style='bold cyan')
             for col in ('id', 'username', 'role', 'active', 'garmin web', 'last login'):

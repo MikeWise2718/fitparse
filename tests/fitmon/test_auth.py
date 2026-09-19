@@ -175,3 +175,23 @@ def test_password_minimum_is_8_and_pages_state_the_real_number(app, alice):
     page = app.test_client().get(f'/invite/{raw}').get_data(as_text=True)
     assert 'at least 8 characters' in page and 'minlength="8"' in page
     assert '(8+ characters)' in alice.get('/').get_data(as_text=True)
+
+
+def test_login_over_plain_http_is_refused_instead_of_silently_not_sticking(app, make_user):
+    """Secure cookies are dropped by the browser over http://<lan-host>: the password would be
+    accepted, the cookie discarded, and the user bounced to the login form as if it were wrong."""
+    from app.models import DeviceToken
+    make_user('alice')
+    app.config['SESSION_COOKIE_SECURE'] = True
+    creds = {'username': 'alice', 'password': PASSWORD, 'remember': True}
+    lan = app.test_client().post('/api/auth/login', json=creds, base_url='http://spearow:8640')
+    assert lan.status_code == 400 and lan.get_json()['error'] == 'https_required'
+    with app.app_context():
+        assert DeviceToken.query.count() == 0                        # nothing minted for a login that cannot stick
+    for base in ('http://localhost:8640', 'https://munchlax.tailnet.ts.net'):
+        assert app.test_client().post('/api/auth/login', json=creds, base_url=base).status_code == 200
+    # behind `tailscale serve` the app itself sees plain HTTP plus X-Forwarded-Proto
+    proxied = app.test_client().post('/api/auth/login', json=creds, base_url='http://munchlax:8640',
+                                     headers={'X-Forwarded-Proto': 'https'})
+    assert proxied.status_code == 200
+    assert 'plain HTTP' in app.test_client().get('/login', base_url='http://spearow:8640').get_data(as_text=True)
