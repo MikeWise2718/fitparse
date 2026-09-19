@@ -164,3 +164,14 @@ def test_passwords_never_reach_the_event_log(app, home, make_user, api):
     event_logger.info('test.event', 'x', password='hunter2-hunter2', token='abc')
     text = (home / 'logs' / 'events.jsonl').read_text()
     assert 'hunter2' not in text and 'auth.login_failed' in text
+
+
+def test_password_minimum_is_8_and_pages_state_the_real_number(app, alice):
+    from app import auth
+    assert auth.MIN_PASSWORD_LENGTH == 8
+    assert auth.validate_new_password('1234567') and auth.validate_new_password('12345678') is None
+    with app.app_context():
+        _, raw = auth.create_invite(alice.user_id)
+    page = app.test_client().get(f'/invite/{raw}').get_data(as_text=True)
+    assert 'at least 8 characters' in page and 'minlength="8"' in page
+    assert '(8+ characters)' in alice.get('/').get_data(as_text=True)

@@ -21,7 +21,7 @@ from .models import DeviceToken, Invite, User, db, utcnow
 DEVICE_COOKIE = 'fitmon_device'
 DEVICE_TOKEN_DAYS = 90
 INVITE_DAYS = 7
-MIN_PASSWORD_LENGTH = 10
+MIN_PASSWORD_LENGTH = 8    # NIST 800-63B floor; length is the only rule, no complexity theatre
 
 # Endpoints reachable without a login. Everything else is denied by default in
 # require_login(), so a new route is private unless it is deliberately added here.

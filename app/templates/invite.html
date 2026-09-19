@@ -16,11 +16,11 @@
     {% if not valid %}
     <div class="banner bad">This invitation is not valid any more. Ask for a new one.</div>
     {% else %}
-    <p>You have been invited. Pick a username and a password of at least 10 characters.</p>
+    <p>You have been invited. Pick a username and a password of at least {{ min_password_length }} characters.</p>
     <form id="invite-form">
         <label class="field"><span>Username</span><input id="invite-username" autocomplete="username" required autofocus></label>
         <label class="field"><span>Display name</span><input id="invite-name"></label>
-        <label class="field"><span>Password</span><input id="invite-password" type="password" autocomplete="new-password" minlength="10" required></label>
+        <label class="field"><span>Password</span><input id="invite-password" type="password" autocomplete="new-password" minlength="{{ min_password_length }}" required></label>
         <button class="primary" type="submit">Create account</button>
         <p id="invite-error" class="down"></p>
     </form>

@@ -198,7 +198,7 @@
         </div>
         <div class="panel"><h2>Password</h2>
             <label class="field"><span>Current</span><input id="set-pw-old" type="password" autocomplete="current-password"></label>
-            <label class="field"><span>New (10+ characters)</span><input id="set-pw-new" type="password" autocomplete="new-password"></label>
+            <label class="field"><span>New ({{ min_password_length }}+ characters)</span><input id="set-pw-new" type="password" autocomplete="new-password"></label>
             <button id="set-pw-save">Change password</button> <span class="muted">signs out every other device</span>
             <h2 style="margin-top:16px">Signed-in devices</h2><table id="set-devices"></table>
             <div class="row" style="margin-top:8px"><button id="set-logout-all">Sign out everywhere</button></div>

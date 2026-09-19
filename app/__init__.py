@@ -7,7 +7,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from flask.json.provider import DefaultJSONProvider
 
-__version__ = '0.2.0'
+__version__ = '0.2.1'
 
 
 class _IsoJSONProvider(DefaultJSONProvider):
@@ -68,7 +68,7 @@ def create_app(home=None, testing: bool = False) -> Flask:
 
     @app.context_processor
     def _inject_version():
-        return {'version': __version__}
+        return {'version': __version__, 'min_password_length': auth.MIN_PASSWORD_LENGTH}
 
     @app.errorhandler(Exception)
     def _handle_error(exc):
