@@ -76,9 +76,21 @@ function range() { const p = new URLSearchParams(); if ($('flt-from').value) p.s
     if ($('flt-to').value) p.set('to', $('flt-to').value); return p; }
 function query(extra = {}) { const p = range(); if ($('flt-sport').value) p.set('sport', $('flt-sport').value);
     Object.entries(extra).forEach(([k, v]) => { if (v !== '' && v != null) p.set(k, v); }); return p.toString(); }
+// The default window ends at the NEWEST ACTIVITY, not at today: an archive that stops two years
+// ago must not open as an empty app. The note says so, and any manual change clears it.
+async function initialRange() {
+    const days = state.settings.default_range_days || 365;
+    const d = await api('/api/dashboard', {quiet: true});
+    const last = d.last_activity_at ? new Date(d.last_activity_at) : null;
+    if (!last || (Date.now() - last) / 86400000 <= days) { setPreset(days); return; }
+    $('flt-from').value = new Date(last.getTime() - days * 86400000).toISOString().slice(0, 10);
+    $('flt-to').value = last.toISOString().slice(0, 10);
+    state.rangeNote = `showing the ${days} days up to your newest activity (${$('flt-to').value})`;
+}
 function setPreset(days) { if (days === 'all') { $('flt-from').value = ''; $('flt-to').value = ''; return; }
     const d = new Date(Date.now() - days * 86400000); $('flt-from').value = d.toISOString().slice(0, 10); $('flt-to').value = ''; }
 
+function showNote() { $('flt-note').textContent = [state.rangeNote, state.staleNote].filter(Boolean).join(' · '); }
 const VIEWS = {dashboard: loadDashboard, activities: () => loadActivities(true), detail: loadDetail, trends: loadTrends,
                body: loadBody, gear: loadGear, explorer: loadExplorer, import: loadImport, settings: loadSettings, admin: loadAdmin};
 function go(view, arg) { location.hash = arg != null ? `#${view}/${arg}` : `#${view}`; }
@@ -125,7 +137,8 @@ async function loadDashboard() {
                              tile('Readiness', d.health.readiness || '', d.health.day));
     $('dash-tiles').innerHTML = tiles.join('');
     const stale = d.last_activity_at && (Date.now() - new Date(d.last_activity_at)) / 86400000;
-    $('flt-note').textContent = stale > 30 ? `newest activity is ${Math.round(stale)} days old - sync Garmin or upload under Import` : '';
+    state.staleNote = stale > 30 ? `newest activity is ${Math.round(stale)} days old - sync Garmin or upload under Import` : '';
+    showNote();
 
     chart('dash-fitness-chart', {data: {labels: fit.days, datasets: [
         {type: 'bar', label: 'daily load', data: fit.load, backgroundColor: 'rgba(138,147,166,.35)', yAxisID: 'y1'},
@@ -171,9 +184,12 @@ async function loadActivities(reset) {
     const data = await api('/api/activities?' + q);
     state.act.rows = state.act.rows.concat(data.activities);
     $('act-count').textContent = `${state.act.rows.length} of ${data.total}`;
+    state.act.filtered = !data.total && ($('flt-from').value || $('flt-to').value || $('flt-sport').value || $('act-search').value);
     $('act-more').style.display = state.act.rows.length < data.total ? '' : 'none';
     $('act-export').href = '/api/export/activities.csv?' + query();
     const el = table('act-table', ACT_COLS, state.act.rows, (r) => go('detail', r.id));
+    if (state.act.filtered) { el.querySelector('tbody td').innerHTML = 'No activities match the current date range, sport or search. <a id="act-show-all">Show all time</a>';
+        $('act-show-all').addEventListener('click', () => { setPreset('all'); $('flt-sport').value = ''; $('act-search').value = ''; state.rangeNote = ''; showNote(); loadActivities(true); }); }
     el.querySelectorAll('th.sortable').forEach((th) => th.addEventListener('click', () => {
         const s = th.dataset.sort; state.act.dir = state.act.sort === s && state.act.dir === 'desc' ? 'asc' : 'desc'; state.act.sort = s; loadActivities(true); }));
 }
@@ -455,8 +471,8 @@ async function loadSports() { const d = await api('/api/sports'), cur = $('flt-s
 function wire() {
     document.querySelectorAll('#tabs a').forEach((a) => a.addEventListener('click', () => go(a.dataset.view)));
     document.body.addEventListener('click', (ev) => { const a = ev.target.closest('[data-goto]'); if (a) go(a.dataset.goto); });
-    ['flt-from', 'flt-to', 'flt-sport'].forEach((id) => $(id).addEventListener('change', reload));
-    $('flt-preset').addEventListener('change', (ev) => { if (ev.target.value) { setPreset(ev.target.value === 'all' ? 'all' : +ev.target.value); ev.target.value = ''; reload(); } });
+    ['flt-from', 'flt-to', 'flt-sport'].forEach((id) => $(id).addEventListener('change', () => { if (id !== 'flt-sport') state.rangeNote = ''; showNote(); reload(); }));
+    $('flt-preset').addEventListener('change', (ev) => { if (ev.target.value) { setPreset(ev.target.value === 'all' ? 'all' : +ev.target.value); ev.target.value = ''; state.rangeNote = ''; showNote(); reload(); } });
     $('logout').addEventListener('click', async () => { await api('/api/auth/logout', {method: 'POST'}); location.href = '/login'; });
     $('dash-volume-metric').addEventListener('change', (ev) => volumeChart('dash-volume-chart', state.dashVolume, ev.target.value));
     let t; $('act-search').addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => loadActivities(true), 250); });
@@ -499,7 +515,7 @@ function wire() {
 
 (async function start() {
     state.settings = await api('/api/settings');
-    setPreset(state.settings.default_range_days || 365);
+    await initialRange();
     wire(); await loadSports();
     if (!location.hash) { let last = null; try { last = localStorage.getItem('fitmon.view'); } catch (e) { /* ignore */ } if (last && last !== 'detail' && VIEWS[last]) location.hash = '#' + last; }
     route();
