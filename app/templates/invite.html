@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fitmon - invitation</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+{% include '_icons.html' %}
+<div class="login panel">
+    <h1>
+        <svg class="icon" width="24" height="24"><use href="#icon-pulse"/></svg>
+        <span>Fitmon <small style="font-size: 0.5em; color: #666;">v{{ version }}</small></span>
+    </h1>
+    {% if not valid %}
+    <div class="banner bad">This invitation is not valid any more. Ask for a new one.</div>
+    {% else %}
+    <p>You have been invited. Pick a username and a password of at least 10 characters.</p>
+    <form id="invite-form">
+        <label class="field"><span>Username</span><input id="invite-username" autocomplete="username" required autofocus></label>
+        <label class="field"><span>Display name</span><input id="invite-name"></label>
+        <label class="field"><span>Password</span><input id="invite-password" type="password" autocomplete="new-password" minlength="10" required></label>
+        <button class="primary" type="submit">Create account</button>
+        <p id="invite-error" class="down"></p>
+    </form>
+    <p class="muted">Whoever runs this server can technically read what you upload to it.
+       You can download or delete all of your data at any time under Settings.</p>
+    <script>
+    document.getElementById('invite-form').addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const resp = await fetch('/api/invite/{{ token }}/accept', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                username: document.getElementById('invite-username').value,
+                display_name: document.getElementById('invite-name').value,
+                password: document.getElementById('invite-password').value,
+            })});
+        if (resp.ok) { location.href = '/'; return; }
+        const body = await resp.json().catch(() => ({}));
+        document.getElementById('invite-error').textContent = body.message || 'That did not work.';
+    });
+    </script>
+    {% endif %}
+</div>
+</body>
+</html>

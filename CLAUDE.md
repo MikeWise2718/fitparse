@@ -98,3 +98,45 @@ Auto-generated from ANT FIT SDK (~12K lines). Contains:
 ## Test Files
 
 Test FIT files are located in `tests/files/`. Many tests compare parsed output against reference CSV files for validation.
+
+---
+
+# Fitmon (the web app in `app/`)
+
+Multi-user fitness-monitoring Flask app built on the library above. **Spec and task tracker:
+`specs/fitmon-app.md`** — read it first; deployment is in `docs/fitmon-deploy.md`.
+
+## Code vs. runtime data
+- **Code**: this repo (`app/`, `deploy/`, `tests/fitmon/`). On munchlax: `~/projects/fitparse/`.
+- **Runtime data**: `~/fitmon/` (override with `FITMON_HOME`) — never inside the repo.
+  `data/fitmon.db` · `users/<id>/fit/` original FIT files · `users/<id>/settings.json` ·
+  `users/<id>/garmin/tokens.enc` · `users/<id>/health/` · `logs/events.jsonl` · `auth/` (generated
+  secret key + token-encryption key).
+- The DB is a **rebuildable index** over the original files. There are no migrations: bump
+  `SCHEMA_VERSION` in `app/models.py` and re-index (Import tab, or a `reindex` job).
+
+## Commands
+```bash
+uv sync                                   # Python 3.13 (.python-version); 3.12+ required
+uv run pytest                             # tests/fitmon (the library's own tests: python -m unittest discover -s tests)
+uv run fitmon-web -w                      # web + inline job worker on :8640 (dev)
+uv run fitmon-web  /  uv run fitmon-worker    # as deployed: two processes, exactly one worker
+uv run fitmon-admin create-user -u NAME -a
+uv run fitmon-import -u NAME -d D:/fit
+uv run fitmon-sync login|run|status
+```
+On spearow prefix with `env -u PYTHONHOME` (Bash) if Python fails with `SRE module mismatch`.
+
+## Rules that are easy to break
+- **Every query on user data starts with `auth.scoped(Model)` / `auth.get_owned(Model, id)`.**
+  Another user's id is a 404. `tests/fitmon/test_scoping.py` walks every id-bearing route as the
+  wrong user and **fails on any new `<arg>` it has no test id for** — add one, don't skip it.
+- Routes are private by default (`auth.PUBLIC_ENDPOINTS` is the allow-list); writes need `X-CSRF-Token`.
+- Bulk parsing/import/sync run in the **job worker**, never in a request (only the single-file "Re-parse" button parses inline). `importer.import_bytes()` is
+  the only way data enters the index.
+- Only `app/sync/client.py` imports `garminconnect` (unofficial API, pinned). Passwords are never
+  stored or logged; `events.py` redacts credential-looking fields.
+- Never turn on the Werkzeug debugger (`debug=True`): other people can reach this app.
+- Bump `app/__init__.py: __version__` in every commit that changes code.
+- The top-level `fitparse.py` script is a legacy CLI that shares its name with the `fitparse/`
+  package (the package wins on import). The Explorer tab replaces it.

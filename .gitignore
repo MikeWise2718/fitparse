@@ -61,6 +61,7 @@ target/
 # python-fitparse specific
 FitSDK*
 
-# Flask app
+# fitmon (runtime data lives in ~/fitmon/, never in the repo; these are v1 leftovers)
+.venv/
 uploads/
 instance/

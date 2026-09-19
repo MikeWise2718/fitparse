@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "id": "fitmon",
+  "title": "Fitmon",
+  "description": "Fitness monitoring from Garmin FIT files",
+  "url": "http://munchlax:8640",
+  "health_url": "http://munchlax:8640/api/ping",
+  "probe_insecure": false,
+  "order": 60
+}

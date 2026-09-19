@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fitmon - sign in</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+{% include '_icons.html' %}
+<div class="login panel">
+    <h1>
+        <svg class="icon" width="24" height="24"><use href="#icon-pulse"/></svg>
+        <span>Fitmon <small style="font-size: 0.5em; color: #666;">v{{ version }}</small></span>
+    </h1>
+    <div id="insecure" class="banner" style="display:none">
+        This page is not on HTTPS, so a login will not stick. Use the Tailscale address instead.
+    </div>
+    <form id="login-form">
+        <label class="field"><span>Username</span><input id="login-username" autocomplete="username" required autofocus></label>
+        <label class="field"><span>Password</span><input id="login-password" type="password" autocomplete="current-password" required></label>
+        <label class="row" style="margin-bottom:12px"><input id="login-remember" type="checkbox" checked> Remember me on this device (90 days)</label>
+        <button class="primary" type="submit">Sign in</button>
+        <p id="login-error" class="down"></p>
+    </form>
+    <p class="muted">Accounts are by invitation.</p>
+</div>
+<script>
+const local = ['localhost', '127.0.0.1'].includes(location.hostname);
+if (location.protocol !== 'https:' && !local) document.getElementById('insecure').style.display = '';
+document.getElementById('login-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const err = document.getElementById('login-error');
+    err.textContent = '';
+    const resp = await fetch('/api/auth/login', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            username: document.getElementById('login-username').value,
+            password: document.getElementById('login-password').value,
+            remember: document.getElementById('login-remember').checked,
+        })});
+    if (resp.ok) { location.href = '/'; return; }
+    const body = await resp.json().catch(() => ({}));
+    err.textContent = body.error === 'too_many_attempts'
+        ? `Too many attempts. Try again in ${body.retry_after} s.` : 'Wrong username or password.';
+});
+</script>
+</body>
+</html>

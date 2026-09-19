@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fitmon</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+{% include '_icons.html' %}
+<header class="top">
+    <h1>
+        <svg class="icon"><use href="#icon-pulse"/></svg>
+        <span>Fitmon <small style="font-size: 0.5em; color: #666;">v{{ version }}</small></span>
+    </h1>
+    <nav class="tabs" id="tabs">
+        <a data-view="dashboard">Dashboard</a>
+        <a data-view="activities">Activities</a>
+        <a data-view="trends">Trends</a>
+        <a data-view="body">Body &amp; zones</a>
+        <a data-view="gear">Gear</a>
+        <a data-view="explorer">Explorer</a>
+        <a data-view="import">Import</a>
+        <a data-view="settings">Settings</a>
+        {% if user.is_admin %}<a data-view="admin">Admin</a>{% endif %}
+    </nav>
+    <div class="who"><span>{{ user.display_name or user.username }}</span><a id="logout">Sign out</a></div>
+</header>
+
+<div class="filters" id="filters">
+    <label>From <input type="date" id="flt-from"></label>
+    <label>To <input type="date" id="flt-to"></label>
+    <select id="flt-preset">
+        <option value="">Range…</option><option value="30">30 days</option><option value="90">90 days</option>
+        <option value="365">1 year</option><option value="730">2 years</option><option value="all">All time</option>
+    </select>
+    <select id="flt-sport"><option value="">All sports</option></select>
+    <span class="muted" id="flt-note"></span>
+</div>
+
+<main>
+<section class="view" id="view-dashboard">
+    <div id="dash-empty" class="banner" style="display:none">No activities yet. Go to <a data-goto="import">Import</a> to upload FIT files or connect Garmin.</div>
+    <div class="tiles" id="dash-tiles"></div>
+    <div class="panel"><h2>Fitness, fatigue and form <small>CTL 42 d · ATL 7 d · TSB = form</small></h2><div class="chart tall"><canvas id="dash-fitness-chart"></canvas></div></div>
+    <div class="grid two">
+        <div class="panel"><h2>Weekly volume
+            <select id="dash-volume-metric"><option value="hours">hours</option><option value="km">km</option><option value="load">load</option><option value="calories">kcal</option></select></h2>
+            <div class="chart"><canvas id="dash-volume-chart"></canvas></div></div>
+        <div class="panel"><h2>Training days <small id="dash-cal-year"></small></h2><div class="cal" id="dash-calendar"></div>
+            <h2 style="margin-top:14px">Recent</h2><div class="scroll" style="max-height:190px"><table id="dash-recent"></table></div></div>
+    </div>
+</section>
+
+<section class="view" id="view-activities">
+    <div class="panel">
+        <div class="row" style="margin-bottom:8px">
+            <input id="act-search" placeholder="Search name or sport…">
+            <label><input type="checkbox" id="act-transitions"> show transitions</label>
+            <span class="muted" id="act-count"></span>
+            <span style="flex:1"></span>
+            <a id="act-export">Export CSV</a>
+        </div>
+        <div class="scroll"><table id="act-table"></table></div>
+        <div class="row" style="margin-top:8px"><button id="act-more">Load more</button></div>
+    </div>
+</section>
+
+<section class="view" id="view-detail">
+    <div class="row" style="margin-bottom:10px"><a data-goto="activities">← Activities</a><span id="det-legs" class="row"></span></div>
+    <div id="det-banner"></div>
+    <div class="panel">
+        <h2><span id="det-title"></span> <small id="det-when"></small></h2>
+        <div class="tiles" id="det-tiles" style="margin-bottom:0"></div>
+    </div>
+    <div class="grid two">
+        <div class="panel" id="det-map-panel"><h2>Route
+            <select id="det-map-color"><option value="">plain</option><option value="hr">by heart rate</option><option value="speed">by speed</option><option value="power">by power</option></select></h2>
+            <div id="map"></div></div>
+        <div class="panel"><h2>Time in zones</h2><div id="det-zones"></div>
+            <h2 style="margin-top:14px">Best efforts</h2><div id="det-best"></div></div>
+    </div>
+    <div class="panel"><h2>Time series
+        <select id="det-xaxis"><option value="t">by time</option><option value="dist">by distance</option></select></h2>
+        <div id="det-series"></div></div>
+    <div class="panel" id="det-sport-panel"></div>
+    <div class="panel"><h2>Laps</h2><div class="scroll"><table id="det-laps"></table></div></div>
+    <div class="panel"><h2>Devices used</h2><table id="det-devices"></table></div>
+    <div class="panel row">
+        <button id="det-rename">Rename</button><button id="det-explore">Open in explorer</button>
+        <a id="det-download"><button>Download .fit</button></a><button id="det-reparse">Re-parse</button>
+        <button id="det-delete" class="danger">Delete file</button>
+    </div>
+</section>
+
+<section class="view" id="view-trends">
+    <div class="grid two">
+        <div class="panel"><h2>VO2 max <small>from the watch's private message</small></h2><div class="chart"><canvas id="tr-vo2-chart"></canvas></div></div>
+        <div class="panel"><h2>Volume
+            <select id="tr-volume-bucket"><option value="week">weekly</option><option value="month" selected>monthly</option><option value="year">yearly</option></select>
+            <select id="tr-volume-metric"><option value="hours">hours</option><option value="km">km</option><option value="load">load</option></select></h2>
+            <div class="chart"><canvas id="tr-volume-chart"></canvas></div></div>
+        <div class="panel"><h2>Power curve <small>all time vs. selected range</small></h2><div class="chart"><canvas id="tr-power-chart"></canvas></div></div>
+        <div class="panel"><h2>Running best efforts</h2><table id="tr-best-table"></table>
+            <h2 style="margin-top:14px">Record progression
+                <select id="tr-pr-kind"></select></h2><div class="chart short"><canvas id="tr-pr-chart"></canvas></div></div>
+        <div class="panel"><h2>Aerobic efficiency
+            <select id="tr-eff-sport"><option value="running">running</option><option value="cycling">cycling</option></select>
+            <small>output per heart beat ↑ = fitter · decoupling ↓ = more durable</small></h2><div class="chart"><canvas id="tr-eff-chart"></canvas></div></div>
+        <div class="panel"><h2>Training effect <small>aerobic vs. anaerobic, per activity</small></h2><div class="chart"><canvas id="tr-te-chart"></canvas></div></div>
+        <div class="panel"><h2>Swimming <small>pace per 100 m and SWOLF</small></h2><div class="chart"><canvas id="tr-swim-chart"></canvas></div></div>
+        <div class="panel"><h2>Strength volume <small>kg × reps per exercise category</small></h2><div class="chart"><canvas id="tr-strength-chart"></canvas></div></div>
+    </div>
+    <div class="panel" id="tr-recovery-panel"><h2>Recovery <small>training load against HRV, resting HR and sleep (Garmin health sync)</small></h2><div class="chart tall"><canvas id="tr-recovery-chart"></canvas></div></div>
+</section>
+
+<section class="view" id="view-body">
+    <div class="tiles" id="body-tiles"></div>
+    <div class="grid two">
+        <div class="panel"><h2>Weight</h2><div class="chart"><canvas id="body-weight-chart"></canvas></div></div>
+        <div class="panel"><h2>Resting heart rate</h2><div class="chart"><canvas id="body-rhr-chart"></canvas></div></div>
+        <div class="panel"><h2>FTP and W/kg</h2><div class="chart"><canvas id="body-ftp-chart"></canvas></div></div>
+        <div class="panel"><h2>Heart-rate references <small>max and threshold</small></h2><div class="chart"><canvas id="body-hr-chart"></canvas></div></div>
+    </div>
+    <div class="panel"><h2>Zones in force now</h2><div class="grid two"><table id="body-hr-zones"></table><table id="body-power-zones"></table></div>
+        <p class="muted">Taken from the watch's settings as recorded in each activity; override them under Settings.</p></div>
+</section>
+
+<section class="view" id="view-gear"><div class="panel"><h2>Devices and sensors</h2><div class="scroll"><table id="gear-table"></table></div></div></section>
+
+<section class="view" id="view-explorer">
+    <div class="grid" style="grid-template-columns: minmax(240px, 320px) minmax(0, 1fr)">
+        <div class="panel">
+            <h2>File</h2>
+            <input id="exp-file-search" placeholder="Filter files…" style="width:100%;margin-bottom:6px">
+            <select id="exp-file" size="8" style="width:100%"></select>
+            <div id="exp-header" class="muted" style="margin:8px 0"></div>
+            <div class="row"><button id="exp-crc">Check CRC</button><span id="exp-crc-result"></span></div>
+            <h2 style="margin-top:14px">Messages</h2>
+            <div class="scroll" style="max-height:45vh"><table id="exp-messages"></table></div>
+            <h2 style="margin-top:14px">Find across my files</h2>
+            <div class="row"><input id="exp-search-name" placeholder="message, e.g. unknown_140"><button id="exp-search">Find</button></div>
+            <div id="exp-search-result" class="scroll" style="max-height:24vh"></div>
+        </div>
+        <div class="panel">
+            <h2><span id="exp-title">Pick a message type</span> <small id="exp-count"></small></h2>
+            <div class="row" style="margin-bottom:8px">
+                <label><input type="checkbox" id="exp-standard"> standard units (km, km/h, °)</label>
+                <label><input type="checkbox" id="exp-raw"> show raw values</label>
+                <label><input type="checkbox" id="exp-hide-unknown"> hide unknown fields</label>
+                <span style="flex:1"></span>
+                <select id="exp-chart-field"><option value="">Chart a field…</option></select>
+                <a id="exp-json">JSON</a><a id="exp-csv">CSV</a>
+            </div>
+            <div class="chart short" id="exp-chart-wrap" style="display:none"><canvas id="exp-chart"></canvas></div>
+            <div id="exp-error"></div>
+            <div class="scroll"><table id="exp-rows" class="mono"></table></div>
+            <div class="row" style="margin-top:8px"><button id="exp-prev">Prev</button><span id="exp-page"></span><button id="exp-next">Next</button></div>
+        </div>
+    </div>
+</section>
+
+<section class="view" id="view-import">
+    <div class="grid two">
+        <div class="panel"><h2>Upload</h2>
+            <div class="drop" id="imp-drop">Drop <b>.fit</b> files or <b>.zip</b> archives here (a Garmin account export works as is), or
+                <a id="imp-browse">browse</a>.<input type="file" id="imp-files" multiple accept=".fit,.zip" style="display:none"></div>
+            <div id="imp-job" style="margin-top:10px"></div>
+            {% if user.is_admin %}
+            <h2 style="margin-top:16px">Scan a folder on the server <small>admin</small></h2>
+            <div class="row"><input id="imp-scan-dir" placeholder="D:\fit" style="flex:1"><button id="imp-scan">Scan</button></div>
+            {% endif %}
+            <h2 style="margin-top:16px">Re-index</h2>
+            <div class="row"><button id="imp-reindex">Re-parse all my files</button><span class="muted">after changing zones or FTP under Settings</span></div>
+        </div>
+        <div class="panel"><h2>Garmin Connect</h2><div id="sync-panel"></div></div>
+    </div>
+    <div class="panel"><h2>Files with problems</h2><table id="imp-problems"></table></div>
+    <div class="panel"><h2>Recent jobs</h2><table id="imp-jobs"></table></div>
+</section>
+
+<section class="view" id="view-settings">
+    <div class="grid two">
+        <div class="panel"><h2>Preferences</h2>
+            <label class="field"><span>Units</span><select id="set-units"><option value="metric">metric</option><option value="statute">statute</option></select></label>
+            <label class="field"><span>Week starts</span><select id="set-week"><option value="monday">Monday</option><option value="sunday">Sunday</option></select></label>
+            <label class="field"><span>Default range (days)</span><input id="set-range" type="number" min="7"></label>
+            <label class="field"><span>Training load model</span><select id="set-load"><option value="auto">auto - power TSS when available, else heart rate</option><option value="trimp">always heart rate</option><option value="tss">power TSS only</option></select></label>
+            <h2 style="margin-top:14px">Zone references <small>blank = use the watch's values</small></h2>
+            <div class="row">
+                <label class="field"><span>Max HR</span><input id="set-maxhr" type="number" style="width:90px"></label>
+                <label class="field"><span>Threshold HR</span><input id="set-lthr" type="number" style="width:90px"></label>
+                <label class="field"><span>Resting HR</span><input id="set-rhr" type="number" style="width:90px"></label>
+                <label class="field"><span>FTP (W)</span><input id="set-ftp" type="number" style="width:90px"></label>
+            </div>
+            <button class="primary" id="set-save">Save</button>
+        </div>
+        <div class="panel"><h2>Password</h2>
+            <label class="field"><span>Current</span><input id="set-pw-old" type="password" autocomplete="current-password"></label>
+            <label class="field"><span>New (10+ characters)</span><input id="set-pw-new" type="password" autocomplete="new-password"></label>
+            <button id="set-pw-save">Change password</button> <span class="muted">signs out every other device</span>
+            <h2 style="margin-top:16px">Signed-in devices</h2><table id="set-devices"></table>
+            <div class="row" style="margin-top:8px"><button id="set-logout-all">Sign out everywhere</button></div>
+        </div>
+    </div>
+    <div class="panel"><h2>Your data</h2>
+        <p class="muted">Whoever runs this server can technically read what is stored on it. Everything here is yours to take or remove.</p>
+        <div class="row"><a href="/api/account/export"><button>Download all my data (.zip)</button></a>
+            <input id="set-del-pw" type="password" placeholder="password to confirm"><button class="danger" id="set-delete">Delete my account and all data</button></div>
+    </div>
+</section>
+
+{% if user.is_admin %}
+<section class="view" id="view-admin">
+    <div class="tiles" id="adm-tiles"></div>
+    <div class="grid two">
+        <div class="panel"><h2>Users</h2><div class="scroll"><table id="adm-users"></table></div></div>
+        <div class="panel"><h2>Invites</h2>
+            <div class="row" style="margin-bottom:8px"><input id="adm-invite-note" placeholder="who is it for?"><button class="primary" id="adm-invite">Create invite link</button></div>
+            <div id="adm-invite-url"></div><table id="adm-invites"></table>
+            <h2 style="margin-top:16px">Server</h2>
+            <label class="field"><span>Public base URL (the Tailscale HTTPS address - used in invite links)</span><input id="adm-base-url" placeholder="https://munchlax.your-tailnet.ts.net"></label>
+            <div class="row"><label class="field"><span>Quota per user (MB)</span><input id="adm-quota-mb" type="number" style="width:110px"></label>
+                <label class="field"><span>Garmin requests / day</span><input id="adm-budget" type="number" style="width:110px"></label></div>
+            <button id="adm-save">Save</button>
+        </div>
+    </div>
+    <div class="panel"><h2>Events <select id="adm-event-prefix"><option value="">all</option><option>auth.</option><option>import.</option><option>sync.</option><option>job.</option><option>app.</option></select></h2>
+        <div class="scroll" style="max-height:40vh"><table id="adm-events" class="mono"></table></div></div>
+</section>
+{% endif %}
+</main>
+<div class="toast" id="toast"></div>
+
+<script>window.FITMON = {csrf: {{ csrf|tojson }}, user: {{ user.to_dict()|tojson }}, version: {{ version|tojson }}};</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

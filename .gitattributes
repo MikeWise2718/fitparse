@@ -1,0 +1,4 @@
+# Scripts and launchd files run on macOS: keep LF even when checked out on Windows.
+*.sh text eol=lf
+*.plist text eol=lf
+*.conf text eol=lf

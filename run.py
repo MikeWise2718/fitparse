@@ -1,9 +1,6 @@
 #!/usr/bin/env python
-"""Entry point for the Flask application."""
-
-from app import create_app
-
-app = create_app()
+"""Convenience entry point: `uv run python run.py -w`. Same as `uv run fitmon-web`."""
+from app.web import main
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    raise SystemExit(main())

@@ -1,92 +1,92 @@
-/* FIT VO2 Max Analyzer Styles */
-
-body {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
+:root {
+    --bg: #f4f5f7; --panel: #fff; --ink: #1d2330; --muted: #6b7385; --line: #e1e4ea;
+    --accent: #0b6bcb; --accent-ink: #fff; --good: #1a8a4a; --warn: #b7791f; --bad: #c0392b;
+    --run: #e4572e; --bike: #0b6bcb; --swim: #17a2b8; --strength: #7d4cdb; --other: #8a93a6;
 }
-
-main {
-    flex: 1;
+@media (prefers-color-scheme: dark) {
+    :root { --bg: #12151c; --panel: #1b202b; --ink: #e6e9f0; --muted: #98a1b3; --line: #2b3242;
+            --accent: #4da3ff; --accent-ink: #0b1220; }
 }
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+       background: var(--bg); color: var(--ink); }
+a { color: var(--accent); text-decoration: none; cursor: pointer; }
+a:hover { text-decoration: underline; }
 
-/* Upload area styling */
-.upload-area {
-    transition: all 0.3s ease;
-    cursor: pointer;
-}
+header.top { display: flex; align-items: center; gap: 16px; padding: 8px 16px; background: var(--panel);
+             border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 1000; flex-wrap: wrap; }
+header.top h1 { margin: 0; font-size: 20px; display: flex; align-items: center; gap: 8px; }
+header.top h1 .icon { width: 22px; height: 22px; color: var(--accent); }
+nav.tabs { display: flex; gap: 2px; flex-wrap: wrap; flex: 1; }
+nav.tabs a { padding: 6px 12px; border-radius: 6px; color: var(--ink); }
+nav.tabs a.active { background: var(--accent); color: var(--accent-ink); text-decoration: none; }
+.who { color: var(--muted); display: flex; gap: 10px; align-items: center; }
 
-.upload-area:hover {
-    background-color: #f8f9fa;
-}
+.filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 16px;
+           border-bottom: 1px solid var(--line); background: var(--panel); }
+main { padding: 16px; max-width: 1400px; margin: 0 auto; }
+.view { display: none; } .view.active { display: block; }
 
-.upload-area.border-primary {
-    background-color: #e7f1ff;
-}
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+.panel h2 { margin: 0 0 10px; font-size: 15px; }
+.panel h2 small { font-weight: 400; color: var(--muted); margin-left: 6px; }
+.grid { display: grid; gap: 14px; }
+.grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.tile { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.tile .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.tile .value { font-size: 22px; font-weight: 600; }
+.tile .sub { color: var(--muted); font-size: 12px; }
+.up { color: var(--good); } .down { color: var(--bad); } .muted { color: var(--muted); }
 
-.border-dashed {
-    border-style: dashed !important;
-}
+.chart { position: relative; height: 260px; } .chart.tall { height: 340px; } .chart.short { height: 170px; }
+#map { height: 340px; border-radius: 6px; }
 
-/* Table row hover */
-.table-hover tbody tr {
-    transition: background-color 0.15s ease-in-out;
-}
+table { border-collapse: collapse; width: 100%; }
+th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--muted); font-weight: 600; font-size: 12px; position: sticky; top: 0; background: var(--panel); }
+th.sortable { cursor: pointer; } td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tbody tr.click { cursor: pointer; } tbody tr.click:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.scroll { overflow: auto; max-height: 70vh; }
+.tag { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 12px; color: #fff; background: var(--other); }
+.tag.running, .tag.walking, .tag.hiking { background: var(--run); } .tag.cycling { background: var(--bike); }
+.tag.swimming { background: var(--swim); } .tag.training, .tag.fitness_equipment { background: var(--strength); }
+.tag.partial, .tag.warn { background: var(--warn); } .tag.failed, .tag.bad { background: var(--bad); }
+.tag.ok, .tag.good { background: var(--good); } .unknown { color: var(--muted); font-style: italic; }
 
-/* Card improvements */
-.card {
-    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
-}
+input, select, button, textarea { font: inherit; color: inherit; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+button { cursor: pointer; } button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button.danger { color: var(--bad); border-color: var(--bad); } button:disabled { opacity: .5; cursor: default; }
+label.field { display: block; margin-bottom: 10px; } label.field span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 3px; }
+label.field input, label.field select { width: 100%; max-width: 340px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.banner { padding: 10px 12px; border-radius: 6px; margin-bottom: 12px; border: 1px solid var(--warn);
+          background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.banner.bad { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); }
+.banner.good { border-color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); }
+code, .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
+.drop { border: 2px dashed var(--line); border-radius: 8px; padding: 28px; text-align: center; color: var(--muted); }
+.drop.over { border-color: var(--accent); color: var(--accent); }
+progress { width: 100%; height: 10px; }
+.bars { display: grid; grid-template-columns: 40px 1fr 70px; gap: 4px 8px; align-items: center; font-size: 12px; }
+.bars .bar { height: 12px; border-radius: 3px; background: var(--accent); min-width: 1px; }
+.cal { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 12px); gap: 2px; overflow-x: auto; }
+.cal i { width: 12px; height: 12px; border-radius: 2px; background: var(--line); display: block; }
+.toast { position: fixed; right: 16px; bottom: 16px; background: var(--ink); color: var(--bg); padding: 10px 14px;
+         border-radius: 6px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 2000; max-width: 420px; }
+.toast.show { opacity: .95; }
 
-.card-header {
-    background-color: #f8f9fa;
-}
+.login { max-width: 360px; margin: 10vh auto; }
+.login h1 { font-size: 22px; display: flex; gap: 8px; align-items: center; }
 
-/* VO2 Max display */
-.display-4 {
-    font-weight: 600;
-}
-
-/* Responsive adjustments */
-@media (max-width: 768px) {
-    .display-6 {
-        font-size: 1.5rem;
-    }
-
-    .table-responsive {
-        font-size: 0.875rem;
-    }
-}
-
-/* Badge styling */
-.badge {
-    font-weight: 500;
-}
-
-/* Navbar */
-.navbar-brand {
-    font-weight: 600;
-}
-
-/* Form controls */
-.form-control:focus,
-.form-select:focus {
-    border-color: #86b7fe;
-    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
-}
-
-/* Pagination */
-.pagination {
-    margin-bottom: 0;
-}
-
-/* Activity detail cards */
-.table-borderless th {
-    color: #6c757d;
-    font-weight: 500;
-}
-
-/* Chart container */
-canvas {
-    max-height: 300px;
+@media (max-width: 900px) { .grid.two, .grid.three { grid-template-columns: 1fr; } }
+@media (max-width: 480px) {
+    body { font-size: 13px; } main { padding: 8px; } header.top { padding: 6px 8px; gap: 8px; }
+    header.top h1 { font-size: 17px; } nav.tabs a { padding: 5px 8px; }
+    .tiles { grid-template-columns: repeat(2, 1fr); } .tile .value { font-size: 18px; }
+    .chart, .chart.tall, #map { height: 220px; } .panel { padding: 10px; }
+    th, td { padding: 5px 6px; } .filters { padding: 6px 8px; }
+    label.field input, label.field select { max-width: none; }
 }

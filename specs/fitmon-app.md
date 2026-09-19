@@ -39,7 +39,7 @@ Surveyed all 111 files under `D:\fit` + `mike/` (pure-python parse, 64 s total, 
 
 ### 1.3 Bugs / gaps found in v1
 1. **`subsport` is always NULL** — parser reads `vals.get('subsport')`, the field is `sub_sport`. All 16 DB rows have NULL; the subsport filter can never match. (Same typo in the old `fitparse.py` CLI.)
-2. **Triathlon file fails**: `2024-07-28-09-44-53.fit` (3 copies) → `FitParseError: Got data message with invalid local message type 14`. Already diagnosed in `D:\hw\epix2gen\CLAUDE.md`: the file is **genuinely corrupt** (an independent parser, `fitdecode`, dies at the same spot after ~34,681 frames), not a library bug. Garmin writes `session` near the end, *before* the corruption, so totals survive. → tolerant `partial` import; and the sync module (§6) can re-fetch a clean copy from Garmin Connect.
+2. **Triathlon file fails**: `2024-07-28-09-44-53.fit` (3 copies) → `FitParseError: Got data message with invalid local message type 14`. Already diagnosed in `D:\hw\epix2gen\CLAUDE.md`: the file is **genuinely corrupt** (an independent parser, `fitdecode`, dies at the same spot after ~34,681 frames), not a library bug. The totals survive. (Correction from the build, §8.1: not because `session` is written near the end - this Epix Pro multisport file writes its five sessions *first*; only the tail after the last sample is damaged, so the file is effectively complete.) → tolerant `partial` import; and the sync module (§6) can re-fetch a clean copy from Garmin Connect.
 3. Activity bounds come from min/max `event` timestamp instead of `session.start_time` / `total_timer_time`.
 4. Multisport files collapse to one row with the *last* `sport` message winning.
 5. Duplicate detection is filename + date; should be content hash (and `serial_number` + `time_created`).
@@ -440,47 +440,46 @@ queue, per-user Garmin egress) — explicitly not designed for.
 
 | # | Task | Phase | Status |
 |---|---|---|---|
-| 0.1 | Claim port 8640 / munchlax in `D:\hw\pokeflute\data\ports.json`, commit + push there | 0 Groundwork | ☐ |
-| 0.2 | `pyproject.toml` (uv), deps: flask, flask-sqlalchemy, rich, rich-argparse, `cryptography`, `garminconnect` (pinned) | 0 | ☐ |
-| 0.3 | `__version__`, header, `/api/ping`, bind 0.0.0.0 + new port, **debugger off / reloader on**, event logger, settings service | 0 | ☐ |
-| 0.4 | Move runtime data to `~/fitmon/` (per-user layout `users/<id>/`); document split in `CLAUDE.md`; migrate the 16 uploaded files to user 1; check free disk on munchlax against §7.8 | 0 | ☐ |
-| 0.5 | Fix `sub_sport` typo (quick win, independent of rewrite) | 0 | ☐ |
-| A.1 | `users` / `device_tokens` / `invites` tables; scrypt hashing; generated `SECRET_KEY`; `fitmon-admin` CLI (bootstrap + password reset) | A Auth | ☐ |
-| A.2 | `/api/auth/*`: login, logout, remember-me 90-day device tokens (hashed at rest, sliding), devices list + revoke, password change; login page; login throttling; auth events | A | ☐ |
-| A.3 | `scoped()` query helper + `login_required` on everything but ping/login/invite; CSRF token; generic error responses; **cross-user access test over every id-bearing route** (extended as routes are added — it is part of each later task's definition of done) | A | ☐ |
-| A.4 | Invites + Admin tab (users, invites, disable); scan-directory / watch-folder gated to admin | A | ☐ |
-| A.5 | Untrusted-input hardening: zip limits, per-user quota, parse time/row limits in the job worker | A | ☐ |
-| A.6 | Account: download my data, delete my account | A | ☐ |
-| 1.1 | New schema (§2) **with `user_id` ownership from the start** + `schema_version` + drop-and-reparse; `records` `WITHOUT ROWID` clustered on `(session_id, t)`; WAL + busy_timeout pragmas (§7.8) | 1 Data | ☐ |
-| 1.1b | Job worker process + queue (imports, reparses, syncs serialized; progress rows the UI polls); resumable per-user reparse | 1 | ☐ |
-| 1.2 | Parser rewrite → `ParsedFile`; sessions/laps/records/lengths/sets/devices/profile | 1 | ☐ |
-| 1.3 | Tolerant `partial` import for corrupt files (tri file = test case; keep messages read before the error) | 1 | ☐ |
-| 1.4 | Importer: `import_bytes()` core, hash dedupe, recursive scan, zip, job status; `fitmon-import` CLI (rich, `-d/--dir`, `-v`) | 1 | ☐ |
-| 1.5 | Tests: parser against `tests/files/` + `mike/*.fit`; importer dedupe; partial file | 1 | ☐ |
-| 1.6 | Import all of `D:\fit` (111 files + 14 zips); sanity-check counts against the survey | 1 | ☐ |
-| S.1 | Live smoke test on spearow: `garminconnect` pinned, login + MFA + token reload under the 0.3.x flow (fix the `client.garth` call), list 5, download 1. Record findings in `docs/garmin-connect-sync-research.md` | S Sync | ☐ |
-| S.2 | `app/sync/client.py` + `activities.py` + `garmin_activities` table; fake-client tests (zip unwrap, bare FIT, resume, stop-on-429, K-known early stop, `no_original`) | S | ☐ |
-| S.3 | `fitmon-sync` CLI; verify sha256 of a Garmin `ORIGINAL` equals the USB copy in `D:\fit\EpixPro42`; pre-seed IDs from `<id>_ACTIVITY.fit` names | S | ☐ |
-| S.4 | **Back-fill**: full sync of the account; re-fetch the corrupt triathlon; reconcile counts | S | ☐ |
-| S.5 | `/api/sync/*`, Import-tab sync panel, auth-required banner, events; **per-user encrypted token store; web "Connect Garmin" flow incl. MFA step, HTTPS-only; disconnect** (§7.5) | S | ☐ |
-| S.6 | launchd timer on munchlax iterating all connected users (429 stops the run); Mike's first login there (after 5.2) | S | ☐ |
-| S.7 | Phase B: capture real samples of each health endpoint → `docs/garmin-connect-health-endpoints.md` → `daily_health` + back-fill | S | ☐ |
-| S.8 | Phase B UI: dashboard tiles, Body tab daily series, Trends → Recovery | S | ☐ |
-| 2.1 | SPA shell + tabs; Activities table; Import tab (REST, no form POSTs) | 2 Core UI | ☐ |
-| 2.2 | Session detail: summary, time-series, laps, map | 2 | ☐ |
-| 2.3 | Explorer tab + API (retire `fitparse.py`, `*.bat`, `tri2025fit.out`) | 2 | ☐ |
-| 3.1 | `metrics.py`: zones, best efforts, NP/IF/TSS, TRIMP, SWOLF, decoupling + tests | 3 Analytics | ☐ |
-| 3.2 | Sport panels: run dynamics, bike pedalling/power curve, swim lengths, strength sets | 3 | ☐ |
-| 3.3 | `fitness.py`: CTL/ATL/TSB, volume buckets; Dashboard | 3 | ☐ |
-| 3.4 | Trends tab; Body & zones tab; Gear tab | 3 | ☐ |
+| 0.1 | Claim port 8640 / munchlax in `D:\hw\pokeflute\data\ports.json`, commit + push there | 0 Groundwork | ✅ 8640 claimed, pushed (pokeflute e837494) |
+| 0.2 | `pyproject.toml` (uv), deps: flask, flask-sqlalchemy, rich, rich-argparse, `cryptography`, `garminconnect` (pinned) | 0 | ✅ |
+| 0.3 | `__version__`, header, `/api/ping`, bind 0.0.0.0 + new port, **debugger off / reloader on**, event logger, settings service | 0 | ✅ |
+| 0.4 | Move runtime data to `~/fitmon/` (per-user layout `users/<id>/`); document split in `CLAUDE.md`; migrate the 16 uploaded files to user 1; check free disk on munchlax against §7.8 | 0 | ◐ runtime data is in `~/fitmon/`; munchlax disk not checked yet; v1 `uploads/` not migrated (all 16 are also in `D:it`) |
+| 0.5 | Fix `sub_sport` typo (quick win, independent of rewrite) | 0 | ✅ (fixed by the parser rewrite) |
+| A.1 | `users` / `device_tokens` / `invites` tables; scrypt hashing; generated `SECRET_KEY`; `fitmon-admin` CLI (bootstrap + password reset) | A Auth | ✅ |
+| A.2 | `/api/auth/*`: login, logout, remember-me 90-day device tokens (hashed at rest, sliding), devices list + revoke, password change; login page; login throttling; auth events | A | ✅ |
+| A.3 | `scoped()` query helper + `login_required` on everything but ping/login/invite; CSRF token; generic error responses; **cross-user access test over every id-bearing route** (extended as routes are added — it is part of each later task's definition of done) | A | ✅ |
+| A.4 | Invites + Admin tab (users, invites, disable); scan-directory / watch-folder gated to admin | A | ✅ |
+| A.5 | Untrusted-input hardening: zip limits, per-user quota, parse time/row limits in the job worker | A | ✅ |
+| A.6 | Account: download my data, delete my account | A | ✅ |
+| 1.1 | New schema (§2) **with `user_id` ownership from the start** + `schema_version` + drop-and-reparse; `records` `WITHOUT ROWID` clustered on `(session_id, t)`; WAL + busy_timeout pragmas (§7.8) | 1 Data | ✅ |
+| 1.1b | Job worker process + queue (imports, reparses, syncs serialized; progress rows the UI polls); resumable per-user reparse | 1 | ✅ |
+| 1.2 | Parser rewrite → `ParsedFile`; sessions/laps/records/lengths/sets/devices/profile | 1 | ✅ |
+| 1.3 | Tolerant `partial` import for corrupt files (tri file = test case; keep messages read before the error) | 1 | ✅ |
+| 1.4 | Importer: `import_bytes()` core, hash dedupe, recursive scan, zip, job status; `fitmon-import` CLI (rich, `-d/--dir`, `-v`) | 1 | ✅ |
+| 1.5 | Tests: parser against `tests/files/` + `mike/*.fit`; importer dedupe; partial file | 1 | ✅ 63 tests |
+| 1.6 | Import all of `D:\fit` (111 files + 14 zips); sanity-check counts against the survey | 1 | ◐ verified on a scratch instance (103 files → 115 sessions, 270k records, 23 MB, 47 s); real import waits for Mike's account |
+| S.1 | Live smoke test on spearow: `garminconnect` pinned, login + MFA + token reload under the 0.3.x flow (fix the `client.garth` call), list 5, download 1. Record findings in `docs/garmin-connect-sync-research.md` | S Sync | ☐ needs Mike's Garmin login - **the sync has never talked to Garmin** |
+| S.2 | `app/sync/client.py` + `activities.py` + `garmin_activities` table; fake-client tests (zip unwrap, bare FIT, resume, stop-on-429, K-known early stop, `no_original`) | S | ✅ (against a fake client) |
+| S.3 | `fitmon-sync` CLI; verify sha256 of a Garmin `ORIGINAL` equals the USB copy in `D:\fit\EpixPro42`; pre-seed IDs from `<id>_ACTIVITY.fit` names | S | ◐ CLI + pre-seed done; sha256-equality check needs a live download |
+| S.4 | **Back-fill**: full sync of the account; re-fetch the corrupt triathlon; reconcile counts | S | ☐ after S.1 |
+| S.5 | `/api/sync/*`, Import-tab sync panel, auth-required banner, events; **per-user encrypted token store; web "Connect Garmin" flow incl. MFA step, HTTPS-only; disconnect** (§7.5) | S | ✅ code + tests; live flow unverified |
+| S.6 | launchd timer on munchlax iterating all connected users (429 stops the run); Mike's first login there (after 5.2) | S | ◐ plist + script in `deploy/`, not installed |
+| S.7 | Phase B: capture real samples of each health endpoint → `docs/garmin-connect-health-endpoints.md` → `daily_health` + back-fill | S | ◐ written against garminconnect's typed models; **no real sample captured yet** - do that before trusting the columns |
+| S.8 | Phase B UI: dashboard tiles, Body tab daily series, Trends → Recovery | S | ✅ code |
+| 2.1 | SPA shell + tabs; Activities table; Import tab (REST, no form POSTs) | 2 Core UI | ✅ code - **UI not yet seen in a browser** |
+| 2.2 | Session detail: summary, time-series, laps, map | 2 | ✅ code - unseen |
+| 2.3 | Explorer tab + API (retire `fitparse.py`, `*.bat`, `tri2025fit.out`) | 2 | ◐ Explorer done; legacy `fitparse.py` / `*.bat` / `tri2025fit.out` not removed yet |
+| 3.1 | `metrics.py`: zones, best efforts, NP/IF/TSS, TRIMP, SWOLF, decoupling + tests | 3 Analytics | ✅ |
+| 3.2 | Sport panels: run dynamics, bike pedalling/power curve, swim lengths, strength sets | 3 | ✅ code - unseen |
+| 3.3 | `fitness.py`: CTL/ATL/TSB, volume buckets; Dashboard | 3 | ✅ |
+| 3.4 | Trends tab; Body & zones tab; Gear tab | 3 | ✅ code - unseen |
 | 4.1 | Regenerate `fitparse/profile.py` from the current FIT SDK; re-run survey, see which `unknown_*` get names (expect `time_in_zone`) | 4 Depth | ☐ |
 | 4.2 | Research remaining Garmin-private messages (140, 79, 141, 233 …) → `docs/garmin-unknown-messages-research.md` with citations, *before* coding against them | 4 | ☐ |
 | 4.3 | Surface what 4.1/4.2 unlock (recovery time, training status, device time-in-zone …) | 4 | ☐ |
-| 5.1 | Settings tab complete; mobile `@media (max-width: 480px)` pass | 5 Ship | ☐ |
-| 5.2 | Deploy per `D:\hw\pokeflute\docs\deploying-a-new-munchlax-service.md`; `~/services-registry/fitmon.json`; `tools/deploy.sh`; launchd units for web + job worker | 5 | ☐ |
+| 5.1 | Settings tab complete; mobile `@media (max-width: 480px)` pass | 5 Ship | ◐ written, not checked on a phone |
+| 5.2 | Deploy per `D:\hw\pokeflute\docs\deploying-a-new-munchlax-service.md`; `~/services-registry/fitmon.json`; `tools/deploy.sh`; launchd units for web + job worker | 5 | ◐ `deploy/` + `docs/fitmon-deploy.md` prepared, not run |
 | 5.3 | `tailscale serve` HTTPS front on munchlax, `ProxyFix`, `public_base_url`, always-`Secure` cookies; **verify a shared-node guest can reach it**; document guest onboarding in `docs/guest-onboarding.md` | 5 | ☐ |
-| 5.4 | Nightly `VACUUM INTO` DB backup + FIT originals rsync to snorlax (`tools/munchlax/`) | 5 | ☐ |
-
+| 5.4 | Nightly `VACUUM INTO` DB backup + FIT originals rsync to snorlax (`tools/munchlax/`) | 5 | ◐ script prepared, not installed |
 Each task = one commit with a version bump, pushed.
 
 **Ordering:** S.1–S.4 run right after phase 1, *before* the analytics phases — CTL/ATL, trends and
@@ -489,6 +488,29 @@ PR logs built on a two-year-stale archive can't be sanity-checked. S.5 lands wit
 Auth: A.1–A.3 come **before phase 1's importer and before any UI work**, so no route is ever
 written unscoped; A.4–A.6 can trail until just before anyone else is invited. Nobody but Mike
 gets an account until A.1–A.5 and the Tailscale HTTPS front (5.3) are done.
+
+---
+
+### 8.1 Build log - 2026-09-19 (v0.2.0)
+Everything except the items marked ☐/◐ above was built in one pass. What real data taught us
+(each is now covered by a test):
+
+| Finding | Consequence |
+|---|---|
+| An Epix Pro **multisport file writes all five `session` messages first**, each stamped with the file's start time - `session.timestamp` is not an end time | records/laps are assigned to legs by `start_time` only. Before this, all 7,383 samples of the triathlon landed in the run leg |
+| The "corrupt" triathlon is complete apart from its tail: 5 legs, all samples | `partial` files are fully usable |
+| `fit_bad_tri/` holds outputs of FIT **repair tools**: they parse cleanly but one collapses the race into a single 57 km "run", another claims 1,093 km | same-activity detection (same serial+created **or** same start second) keeps **one** copy, ranked by legs-with-duration → clean parse → samples; implausible leg totals are dropped and the file flagged `partial`; distance jumps are cut out of best-effort windows. Without this the PR table showed 10 km in 18 min |
+| Watches report **running power**; scoring it against cycling FTP gave a 63-min run TSS 285 | TSS and power zones are cycling-only; power curves are per sport, default cycling |
+| `resting_heart_rate` = 0 means "not set"; anonymous `device_info` rows are the watch's internal parts | stored as NULL; filtered out of Gear |
+| Garmin product ids (4312 = Epix Pro 42 mm) are numeric with this old SDK profile | task 4.1 will name them |
+
+Deviations from the plan: no `daily_load` table (sessions carry `load`; CTL is one grouped
+query over an indexed column - add the table only if that ever shows up in a profile);
+`/api/import/reparse-all` became `/api/import/reindex`; runtime scaffolding lives in `deploy/`
+(the fleet convention) rather than `tools/`.
+
+**Not verified:** the UI has not been looked at in a browser (the agent may not type passwords
+into one), nothing has touched Garmin's servers, nothing is deployed.
 
 ---
 

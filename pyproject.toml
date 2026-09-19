@@ -1,0 +1,40 @@
+[project]
+name = "fitmon"
+dynamic = ["version"]
+description = "Multi-user fitness monitoring web app over Garmin FIT files, built on python-fitparse"
+requires-python = ">=3.12"   # garminconnect 0.3.x needs 3.12+
+dependencies = [
+    "flask>=3.0.0",
+    "flask-sqlalchemy>=3.1.0",
+    "rich>=13.7.0",
+    "rich-argparse>=1.4.0",
+    "cryptography>=42.0.0",
+    # Unofficial Garmin Connect client. Pinned: the API is undocumented and the
+    # login/token flow changed incompatibly between 0.2.x and 0.3.x (see specs/fitmon-app.md 6.1).
+    "garminconnect==0.3.11",
+]
+
+[project.scripts]
+fitmon-web = "app.web:main"
+fitmon-admin = "app.cli.admin:main"
+fitmon-import = "app.cli.importer:main"
+fitmon-worker = "app.worker:main"
+fitmon-sync = "app.sync.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8.0.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "app/__init__.py"
+
+# The upstream python-fitparse library lives in fitparse/ and keeps its own setup.py;
+# fitmon ships both packages so `import fitparse` resolves to this checkout.
+[tool.hatch.build.targets.wheel]
+packages = ["app", "fitparse"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/fitmon"]
