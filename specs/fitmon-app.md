@@ -49,7 +49,7 @@ Surveyed all 111 files under `D:\fit` + `mike/` (pure-python parse, 64 s total, 
 ### 1.4 Divergence from the global Flask conventions
 | Rule | v1 | Plan |
 |---|---|---|
-| Port reserved | binds **5000 = pokeflute's port**, unreserved | claim **8640** on **munchlax** (decided, §9) |
+| Port reserved | binds **5000 = pokeflute's port**, unreserved | claim **8640** on **munchlax** (decided, §10) |
 | Version in header | none | `app/__init__.py: __version__`, shown in `<h1>`, bump per commit |
 | `GET /api/ping` | none | add |
 | REST/JSON for every action | form POSTs + `flash()` + redirects | all actions → `/api/...`, JS renders |
@@ -57,20 +57,27 @@ Surveyed all 111 files under `D:\fit` + `mike/` (pure-python parse, 64 s total, 
 | `events.jsonl` | none | add `app/logging.py` event logger |
 | Server-side settings | none | `~/fitmon/data/settings.json`, `GET/POST /api/settings` |
 | Bind 0.0.0.0, debug reloader | 127.0.0.1 | fix in `run.py` |
-| Auth | none | none — LAN-only personal tool (decision recorded; revisit if exposed beyond LAN) |
+| Auth | none | **multi-user with login** — friends and family will use it (§7). Remember-me device tokens, 90 days |
 | uv / rich / rich-argparse / short flags | no | `pyproject.toml`; import CLI uses rich + rich-argparse |
 
 ---
 
 ## 2. Data model (SQLite, WAL, at `~/fitmon/data/fitmon.db`)
 
-Original FIT files are kept (`~/fitmon/fit/<sha256[:2]>/<sha256>.fit`) — the DB is a **rebuildable
+Original FIT files are kept (`~/fitmon/users/<user_id>/fit/<sha256[:2]>/<sha256>.fit`) — the DB is a **rebuildable
 index**; `reparse all` must always be able to regenerate it after a schema change. So: no
 migrations framework, just a `schema_version` and "drop + reparse".
 
+**Every row belongs to a user** (§7). `files.user_id` is the ownership root — sessions, laps,
+records, lengths, sets, devices, best efforts and zone time inherit it through `file_id`;
+`profile_snapshots`, `garmin_activities` and `daily_health` carry `user_id` directly. This goes
+into the schema in task 1.1, not later: retrofitting tenancy onto a populated single-user schema
+means touching every query twice.
+
 | Table | Grain | Key columns |
 |---|---|---|
-| `files` | one FIT file | sha256 (unique), original name, size, device product/serial, `time_created`, utc_offset (from `activity.local_timestamp`), parse_status (`ok` / `partial` / `failed`), parse_error, message-type counts (JSON) |
+| `users`, `device_tokens`, `invites` | see §7.2 | |
+| `files` | one FIT file | **user_id**, sha256 (unique **per user**), original name, size, device product/serial, `time_created`, utc_offset (from `activity.local_timestamp`), parse_status (`ok` / `partial` / `failed`), parse_error, message-type counts (JSON) |
 | `sessions` | one sport leg (**the unit every view works on**) | file_id, index, sport, sub_sport, start, timer/elapsed time, distance, calories, avg/max HR, avg/max speed, ascent/descent, avg/max/normalized power, total work, aerobic TE, anaerobic TE, avg cadence, pool length, bbox, **vo2max**, derived: TRIMP / load score, IF, TSS (when FTP known) |
 | `laps` | lap | session_id + the lap fields above |
 | `records` | 1 Hz sample | session_id, t, hr, speed, distance, lat, lon, alt, cadence, power, lr_balance, temp, grade, running-dynamics cols, pedal cols. ~3k rows/activity, 311k today — trivial for SQLite. Index `(session_id, t)` |
@@ -243,6 +250,10 @@ app/sync/
   — at 1 s each even 1,500 activities is under half an hour, so no need to be clever.
 
 ### 6.3 Auth, secrets, scheduling
+> Written for the single-user case. With multiple users (§7) the token path becomes per-user and
+> encrypted, and a web Connect flow is added for people who can't SSH — **§7.5 overrides this
+> section where they differ.** The CLI path below remains how Mike/admin connects.
+
 - **Tokens** in `~/fitmon/auth/garmin/` (runtime-data side of the split, `chmod 700`), never in
   the repo, never synced between hosts — each host logs in once.
 - **Password is never stored** and never accepted by the web UI. First login is interactive:
@@ -266,7 +277,7 @@ but Garmin Connect has the whole history and `garminconnect 0.3.11` exposes it a
 `get_training_readiness`, `get_weigh_ins`.
 - Table `daily_health` (date PK; resting HR, HRV overnight avg + status, sleep duration + score,
   body battery min/max, stress avg, weight, VO2 max run/bike, training status, readiness,
-  acute load) + the raw JSON per day on disk under `~/fitmon/health/YYYY/` so columns can be added
+  acute load) + the raw JSON per day on disk under `~/fitmon/users/<id>/health/YYYY/` so columns can be added
   later without re-fetching.
 - Range endpoints first (one request per month, not per day); back-fill oldest-last so the
   dashboard is useful immediately.
@@ -300,16 +311,111 @@ as "no new activities" weeks later.
 
 ---
 
-## 7. Phases and task tracker
+## 7. Users, auth and multi-tenancy
+
+**Why:** friends and family will want to try it. That is not "add a login page" — it turns a
+personal tool into a small multi-tenant service holding *other people's* health data and, via
+§6, credentials to their Garmin accounts. Three consequences drive everything below: data is
+scoped per user everywhere, several v1 features become dangerous and must be restricted, and
+the Garmin login can no longer be "SSH in and run a CLI".
+
+Pokeflute's `auth.py` is the reference for the *shape* (Remember-me device tokens, 90 days) but
+not the implementation: it is single-user JSON with salted SHA-256, which is not adequate here.
+
+### 7.1 Model
+- **Invite-only.** No open registration. An admin creates an invite → one-time link, 7-day
+  expiry → invitee picks username + password. Bootstrap: `fitmon-admin create-user -u mike -a`.
+- **Roles:** `admin`, `user`. Admin = user management, invites, system status, import-from-server-path,
+  global reparse. Admin screens never show another user's fitness data — but the About box says
+  plainly that the operator of the box *can* read the database. Don't promise privacy the
+  architecture doesn't provide.
+- **No sharing between users in v1** (no "follow", no shared dashboards). Schema doesn't preclude it.
+
+### 7.2 Tables
+| Table | Columns |
+|---|---|
+| `users` | id, username (unique, case-folded), display_name, password_hash (werkzeug **scrypt**), role, is_active, created_at, last_login_at |
+| `device_tokens` | id, user_id, **token_sha256** (the raw token exists only in the cookie), device_name (from UA), created_at, last_used_at, expires_at (= now + 90 d, slides on use), revoked_at |
+| `invites` | token_sha256, role, created_by, expires_at, used_by, used_at |
+| per-user settings | `~/fitmon/users/<id>/settings.json` via `/api/settings` (server-side rule still holds; now per user) + a global admin settings file |
+
+### 7.3 Mechanics
+- **Login:** `POST /api/auth/login {username, password, remember}`. Unchecked → signed session
+  cookie (browser session). Checked → 32-byte random device token, 90-day cookie, `HttpOnly`,
+  `SameSite=Lax`, `Secure` when served over HTTPS. Settings → Devices lists and revokes them;
+  "log out everywhere"; password change revokes all tokens.
+- **Throttling:** failed logins limited per username *and* per IP with growing back-off;
+  identical error for unknown user / wrong password. `auth.login_failed` events make abuse visible.
+- **`SECRET_KEY`:** generated on first run into `~/fitmon/auth/secret_key`. The
+  `'dev-key-change-in-production'` default in `app/config.py` goes away — a guessable key lets
+  anyone forge a session.
+- **CSRF:** cookie auth + JSON API → every mutating request needs `X-CSRF-Token` (issued by
+  `GET /api/auth/me`); multipart uploads included.
+- **Scoping, enforced in one place:** a `scoped(Model)` query helper keyed on `g.user`; routes
+  never build unscoped queries. Another user's id returns **404, not 403**. A test walks every
+  `/api/...<id>...` route as user B against user A's ids — this test is the real guarantee.
+- **Unauthenticated surface:** `/api/ping`, login, invite redemption, static assets. Nothing else.
+
+### 7.4 v1/plan features that change because users are no longer trusted
+| Feature | Problem | Change |
+|---|---|---|
+| Directory scan (`/api/import/scan`) and watch folder | reads arbitrary server paths | **admin only** |
+| Zip import | zip bombs, path traversal in member names | cap member count + total uncompressed size, read `.fit` members only, never extract to disk by name |
+| Upload | disk fill | per-user quota; keep `MAX_CONTENT_LENGTH` |
+| FIT parse (pure python, attacker-controlled input) | CPU / memory exhaustion | parse in the job worker with a time + row limit, not in the request |
+| Explorer, file download | path from DB | only ever by scoped `file_id`; never a path parameter |
+| `debug=True` | **Werkzeug interactive debugger = remote code execution** for anyone who can reach it | `app.run(debug=False, use_reloader=True)` — keeps the "deploy = `git pull`" reloader the fleet convention wants, drops the debugger |
+| Error responses | tracebacks leak paths / data | generic JSON error + event-log id |
+
+### 7.5 Impact on Garmin sync (§6)
+- Tokens move to `~/fitmon/users/<id>/garmin/` (700), **encrypted at rest** (Fernet, key in
+  `~/fitmon/auth/`) — this protects backups and stray copies, not against root on the box.
+- Friends can't SSH, so §6.3's "password never accepted by the web UI" holds only for the CLI.
+  Add a **Connect Garmin** flow: `POST /api/sync/login {email, password}` → if `needs_mfa`, a second
+  step `POST /api/sync/login/mfa {code}` (pending login held server-side for ≤ 5 min; *their*
+  accounts may well have MFA even though Mike's doesn't). The password lives for that one request:
+  never stored, never logged, scrubbed from event fields and error reports. **Only offered over
+  HTTPS** (§11 Q1); on plain HTTP the UI hides it and points to the alternative.
+- **The no-credentials alternative stays first-class:** upload Garmin's account-export zip or
+  individual files. The Connect screen states the trade-off honestly — connecting means this
+  server holds a token with full access to your Garmin account until you disconnect.
+- **Disconnect** deletes the tokens. **Delete my account** removes all rows, files, tokens and
+  health JSON for that user; **Download my data** (zip of original FITs + CSV/JSON) comes first.
+- Scheduler iterates users sequentially; one user's auth failure skips that user, but a **429
+  stops the whole run** — all accounts share one source IP, and several accounts from one IP on
+  an unofficial API is exactly what gets throttled. Keep the user count small and the pacing slow.
+
+### 7.6 API additions
+```
+POST /api/auth/login | /logout | /logout-all     GET /api/auth/me
+POST /api/auth/password                          GET /api/auth/devices   POST /api/auth/devices/<id>/revoke
+GET  /api/invite/<token>                         POST /api/invite/<token>/accept
+GET  /api/admin/users    POST /api/admin/users/<id>/disable | /enable | /role
+GET  /api/admin/invites  POST /api/admin/invites         POST /api/admin/invites/<id>/revoke
+POST /api/sync/login     POST /api/sync/login/mfa        POST /api/sync/disconnect
+GET  /api/account/export                         POST /api/account/delete
+```
+CLI: `fitmon-admin create-user | reset-password | list-users | disable-user` (rich, short flags)
+— the recovery path when the only admin forgets their password.
+
+---
+
+## 8. Phases and task tracker
 
 | # | Task | Phase | Status |
 |---|---|---|---|
 | 0.1 | Claim port 8640 / munchlax in `D:\hw\pokeflute\data\ports.json`, commit + push there | 0 Groundwork | ☐ |
-| 0.2 | `pyproject.toml` (uv), deps: flask, flask-sqlalchemy → or plain sqlite3 (decide in 1.1), rich, rich-argparse, `garminconnect` (pinned) | 0 | ☐ |
-| 0.3 | `__version__`, header, `/api/ping`, bind 0.0.0.0 + new port, event logger, settings service | 0 | ☐ |
-| 0.4 | Move runtime data to `~/fitmon/`; document split in `CLAUDE.md`; migrate the 16 uploaded files | 0 | ☐ |
+| 0.2 | `pyproject.toml` (uv), deps: flask, flask-sqlalchemy, rich, rich-argparse, `cryptography`, `garminconnect` (pinned) | 0 | ☐ |
+| 0.3 | `__version__`, header, `/api/ping`, bind 0.0.0.0 + new port, **debugger off / reloader on**, event logger, settings service | 0 | ☐ |
+| 0.4 | Move runtime data to `~/fitmon/` (per-user layout `users/<id>/`); document split in `CLAUDE.md`; migrate the 16 uploaded files to user 1 | 0 | ☐ |
 | 0.5 | Fix `sub_sport` typo (quick win, independent of rewrite) | 0 | ☐ |
-| 1.1 | New schema (§2) + `schema_version` + drop-and-reparse | 1 Data | ☐ |
+| A.1 | `users` / `device_tokens` / `invites` tables; scrypt hashing; generated `SECRET_KEY`; `fitmon-admin` CLI (bootstrap + password reset) | A Auth | ☐ |
+| A.2 | `/api/auth/*`: login, logout, remember-me 90-day device tokens (hashed at rest, sliding), devices list + revoke, password change; login page; login throttling; auth events | A | ☐ |
+| A.3 | `scoped()` query helper + `login_required` on everything but ping/login/invite; CSRF token; generic error responses; **cross-user access test over every id-bearing route** (extended as routes are added — it is part of each later task's definition of done) | A | ☐ |
+| A.4 | Invites + Admin tab (users, invites, disable); scan-directory / watch-folder gated to admin | A | ☐ |
+| A.5 | Untrusted-input hardening: zip limits, per-user quota, parse time/row limits in the job worker | A | ☐ |
+| A.6 | Account: download my data, delete my account | A | ☐ |
+| 1.1 | New schema (§2) **with `user_id` ownership from the start** + `schema_version` + drop-and-reparse | 1 Data | ☐ |
 | 1.2 | Parser rewrite → `ParsedFile`; sessions/laps/records/lengths/sets/devices/profile | 1 | ☐ |
 | 1.3 | Tolerant `partial` import for corrupt files (tri file = test case; keep messages read before the error) | 1 | ☐ |
 | 1.4 | Importer: `import_bytes()` core, hash dedupe, recursive scan, zip, job status; `fitmon-import` CLI (rich, `-d/--dir`, `-v`) | 1 | ☐ |
@@ -319,8 +425,8 @@ as "no new activities" weeks later.
 | S.2 | `app/sync/client.py` + `activities.py` + `garmin_activities` table; fake-client tests (zip unwrap, bare FIT, resume, stop-on-429, K-known early stop, `no_original`) | S | ☐ |
 | S.3 | `fitmon-sync` CLI; verify sha256 of a Garmin `ORIGINAL` equals the USB copy in `D:\fit\EpixPro42`; pre-seed IDs from `<id>_ACTIVITY.fit` names | S | ☐ |
 | S.4 | **Back-fill**: full sync of the account; re-fetch the corrupt triathlon; reconcile counts | S | ☐ |
-| S.5 | `/api/sync/*`, Import-tab sync panel, auth-required banner, events | S | ☐ |
-| S.6 | launchd timer on munchlax + first interactive login there (after 5.2) | S | ☐ |
+| S.5 | `/api/sync/*`, Import-tab sync panel, auth-required banner, events; **per-user encrypted token store; web "Connect Garmin" flow incl. MFA step, HTTPS-only; disconnect** (§7.5) | S | ☐ |
+| S.6 | launchd timer on munchlax iterating all connected users (429 stops the run); Mike's first login there (after 5.2) | S | ☐ |
 | S.7 | Phase B: capture real samples of each health endpoint → `docs/garmin-connect-health-endpoints.md` → `daily_health` + back-fill | S | ☐ |
 | S.8 | Phase B UI: dashboard tiles, Body tab daily series, Trends → Recovery | S | ☐ |
 | 2.1 | SPA shell + tabs; Activities table; Import tab (REST, no form POSTs) | 2 Core UI | ☐ |
@@ -341,22 +447,33 @@ Each task = one commit with a version bump, pushed.
 **Ordering:** S.1–S.4 run right after phase 1, *before* the analytics phases — CTL/ATL, trends and
 PR logs built on a two-year-stale archive can't be sanity-checked. S.5 lands with the Import tab
 (2.1); S.6 after deploy; S.7–S.8 after phase 3.
+Auth: A.1–A.3 come **before phase 1's importer and before any UI work**, so no route is ever
+written unscoped; A.4–A.6 can trail until just before anyone else is invited. Nobody but Mike
+gets an account until A.1–A.5 and the HTTPS question (§11 Q1) are done.
 
 ---
 
-## 8. Out of scope (for now)
+## 9. Out of scope (for now)
 Monitoring / sleep / HRV **FIT files** (none in the archive; the same data comes as JSON via
 §6.4; `files.type` leaves room) · the official Garmin Health API (business-only) · writing
-anything back to Garmin Connect · auth · editing activities · writing FIT files (the library is
-read-only) · Strava or other sources (the importer is source-agnostic if that changes).
+anything back to Garmin Connect · sharing / social features between users · open registration,
+email verification, password-reset-by-email (admin resets via CLI) · OAuth / SSO · editing
+activities · writing FIT files (the library is read-only) · Strava or other sources (the importer
+is source-agnostic if that changes).
 
-## 9. Decisions (Mike, 2026-09-19)
+## 10. Decisions (Mike, 2026-09-19)
 1. **Host: munchlax:8640**, developed on spearow. Archive goes in via `fitmon-import` / upload; ongoing data via the sync module.
 2. **Load model:** TSS where power + FTP exist, else HR-TRIMP; Garmin TE displayed but not used for CTL.
 3. **Stale archive** is solved by automating export (§6), not by another manual pull.
 4. **Keep Flask-SQLAlchemy**; bulk-insert `records` with `executemany`.
-
 5. **Garmin MFA: off** (confirmed by Mike). So login can run non-interactively from `$GARMIN_EMAIL` / `$GARMIN_PASSWORD` for that one invocation — no TTY needed over SSH to munchlax. The MFA prompt path stays in the code (Garmin can turn it on), but re-login is a one-liner, not a chore.
 
-## 10. Open questions
-1. Phase B health data includes sleep and HRV history on a LAN app with no auth — still fine, or does that tip it toward adding the login flow?
+6. **User auth, multi-user** — friends and family will try it (§7). Supersedes the earlier "no auth, LAN-only" stance and answers the phase-B privacy question.
+
+## 11. Open questions
+1. **How do friends and family reach it?** This decides HTTPS, and HTTPS gates the web Garmin login (§7.5).
+   - *LAN only* (visitors on the house Wi-Fi): nothing to build, but plain HTTP → passwords and cookies in clear on the LAN; Garmin connect stays CLI/upload-only.
+   - **Tailscale (recommended):** already in use on the fleet. `tailscale serve` on munchlax gives a real HTTPS cert and a stable name, reachable only by devices Mike has shared the node with — no public attack surface, and the Flask reloader setup can stay.
+   - *Public URL* (Tailscale Funnel / Cloudflare Tunnel): easiest for guests, but the app is then on the internet — needs waitress instead of the dev server, stricter throttling, and a real look at the pokeflute "reloader, no restart" convention. Not recommended for a first version.
+2. **Who holds the Garmin tokens?** Comfortable with this server storing friends' Garmin tokens (§7.5), or should guests be upload-only and the web Connect flow be Mike/admin-only to start? Recommendation: build it, ship it **off by default per user**, admin enables it per person.
+3. Roughly how many people? (A handful is fine on SQLite + one source IP for Garmin; dozens is a different design.)
