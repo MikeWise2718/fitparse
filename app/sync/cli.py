@@ -49,16 +49,13 @@ def cmd_login(app, args) -> int:
         if isinstance(exc, gc.SyncRateLimited) or '429' in text or 'exhausted' in text:
             # One `login` is up to five sign-in attempts (the library walks a chain of routes).
             # Retrying straight away only deepens an IP rate limit.
-            console.print(
-                '
-[yellow]Do not retry right away[/yellow] - each run is several sign-in attempts and '
-                "Garmin's limit is per IP; give it an hour or more.
-"
-                'Meanwhile: check the password by signing in at connect.garmin.com in a browser (that also '
-                'shows whether Garmin wants a captcha or a code),
-'
-                "and remember the sync is optional - Garmin's own export (garmin.com/account/datamanagement "
-                '-> Export Your Data) gives a zip you can drop on the Import tab.')
+            console.print()
+            console.print("[yellow]Do not retry right away[/yellow] - each run is several sign-in attempts "
+                          "and Garmin's limit is per IP; give it an hour or more.")
+            console.print('Meanwhile: check the password by signing in at connect.garmin.com in a browser '
+                          '(that also shows whether Garmin wants a captcha or a code).')
+            console.print("The sync is optional: Garmin's own export (garmin.com/account/datamanagement -> "
+                          'Export Your Data) gives a zip you can drop on the Import tab.')
         return 1
     acct = activities.account(user.id)
     acct.status, acct.connected_at, acct.last_error = 'ok', utcnow(), None
