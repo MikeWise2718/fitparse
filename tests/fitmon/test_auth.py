@@ -194,4 +194,5 @@ def test_login_over_plain_http_is_refused_instead_of_silently_not_sticking(app, 
     proxied = app.test_client().post('/api/auth/login', json=creds, base_url='http://munchlax:8640',
                                      headers={'X-Forwarded-Proto': 'https'})
     assert proxied.status_code == 200
-    assert 'plain HTTP' in app.test_client().get('/login', base_url='http://spearow:8640').get_data(as_text=True)
+    page = app.test_client().get('/login', base_url='http://spearow:8640').get_data(as_text=True)
+    assert 'plain HTTP' in page and 'href="http://localhost:8640/login"' in page

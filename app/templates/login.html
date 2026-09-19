@@ -14,7 +14,7 @@
         <span>Fitmon <small style="font-size: 0.5em; color: #666;">v{{ version }}</small></span>
     </h1>
     <div id="insecure" class="banner" style="display:none">
-        This page is on plain HTTP, where browsers discard the login cookie, so sign-in is refused here. Use the HTTPS (Tailscale) address, or <code>http://localhost:8640</code> on the machine that runs fitmon.
+        This page is on plain HTTP, where browsers discard the login cookie, so sign-in is refused here. Use the HTTPS (Tailscale) address - or, if this browser is on the machine that runs fitmon, <a id="insecure-local" href="http://localhost:8640/login">open http://localhost:8640</a>.
     </div>
     <form id="login-form">
         <label class="field"><span>Username</span><input id="login-username" autocomplete="username" required autofocus></label>
@@ -27,7 +27,12 @@
 </div>
 <script>
 const local = ['localhost', '127.0.0.1'].includes(location.hostname);
-if (location.protocol !== 'https:' && !local) document.getElementById('insecure').style.display = '';
+if (location.protocol !== 'https:' && !local) {
+    document.getElementById('insecure').style.display = '';
+    const link = document.getElementById('insecure-local');      // keep whatever port we are served on
+    link.href = `http://localhost:${location.port || 80}/login`;
+    link.textContent = `open http://localhost:${location.port || 80}`;
+}
 document.getElementById('login-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const err = document.getElementById('login-error');
