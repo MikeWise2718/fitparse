@@ -1,0 +1,92 @@
+/* FIT VO2 Max Analyzer Styles */
+
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+main {
+    flex: 1;
+}
+
+/* Upload area styling */
+.upload-area {
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.upload-area:hover {
+    background-color: #f8f9fa;
+}
+
+.upload-area.border-primary {
+    background-color: #e7f1ff;
+}
+
+.border-dashed {
+    border-style: dashed !important;
+}
+
+/* Table row hover */
+.table-hover tbody tr {
+    transition: background-color 0.15s ease-in-out;
+}
+
+/* Card improvements */
+.card {
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.card-header {
+    background-color: #f8f9fa;
+}
+
+/* VO2 Max display */
+.display-4 {
+    font-weight: 600;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .display-6 {
+        font-size: 1.5rem;
+    }
+
+    .table-responsive {
+        font-size: 0.875rem;
+    }
+}
+
+/* Badge styling */
+.badge {
+    font-weight: 500;
+}
+
+/* Navbar */
+.navbar-brand {
+    font-weight: 600;
+}
+
+/* Form controls */
+.form-control:focus,
+.form-select:focus {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+/* Pagination */
+.pagination {
+    margin-bottom: 0;
+}
+
+/* Activity detail cards */
+.table-borderless th {
+    color: #6c757d;
+    font-weight: 500;
+}
+
+/* Chart container */
+canvas {
+    max-height: 300px;
+}

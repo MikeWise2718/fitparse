@@ -60,3 +60,7 @@ target/
 
 # python-fitparse specific
 FitSDK*
+
+# Flask app
+uploads/
+instance/
