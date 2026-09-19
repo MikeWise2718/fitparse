@@ -1,5 +1,8 @@
 # Flask UI for FIT File VO2 Max Analysis
 
+> **Status: implemented (v1) and superseded by [`fitmon-app.md`](fitmon-app.md)**, which extends
+> the app from VO2 max only to the full contents of the FIT files. Kept for history.
+
 ## Overview
 
 Web application to upload and analyze Garmin FIT files, displaying VO2 max trends separately for cycling and running activities.
