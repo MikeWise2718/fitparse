@@ -252,7 +252,9 @@ app/sync/
 ### 6.3 Auth, secrets, scheduling
 > Written for the single-user case. With multiple users (§7) the token path becomes per-user and
 > encrypted, and a web Connect flow is added for people who can't SSH — **§7.5 overrides this
-> section where they differ.** The CLI path below remains how Mike/admin connects.
+> section where they differ.** The CLI path below remains how Mike/admin connects. Likewise
+> "Sync now" and the nightly timer **enqueue into the job worker** (§7.8) rather than spawning
+> their own process; the worker's queue replaces the lock file.
 
 - **Tokens** in `~/fitmon/auth/garmin/` (runtime-data side of the split, `chmod 700`), never in
   the repo, never synced between hosts — each host logs in once.
@@ -375,7 +377,8 @@ not the implementation: it is single-user JSON with salted SHA-256, which is not
   step `POST /api/sync/login/mfa {code}` (pending login held server-side for ≤ 5 min; *their*
   accounts may well have MFA even though Mike's doesn't). The password lives for that one request:
   never stored, never logged, scrubbed from event fields and error reports. **Only offered over
-  HTTPS** (§11 Q1); on plain HTTP the UI hides it and points to the alternative.
+  HTTPS** (§7.7) **and only for users an admin has enabled it for** (off by default, §10.8);
+  otherwise the UI hides it and points to the alternative.
 - **The no-credentials alternative stays first-class:** upload Garmin's account-export zip or
   individual files. The Connect screen states the trade-off honestly — connecting means this
   server holds a token with full access to your Garmin account until you disconnect.
@@ -398,6 +401,39 @@ GET  /api/account/export                         POST /api/account/delete
 CLI: `fitmon-admin create-user | reset-password | list-users | disable-user` (rich, short flags)
 — the recovery path when the only admin forgets their password.
 
+### 7.7 Reachability: Tailscale (decided)
+- `tailscale serve --bg 8640` on munchlax → `https://munchlax.<tailnet>.ts.net` with a real
+  certificate, reachable only from the tailnet and from people the node is **shared** with. Each
+  guest installs Tailscale and accepts a node share — that is the onboarding cost, and it is also
+  the outer security layer: the login page is not on the internet.
+- The app still binds `0.0.0.0:8640` so pokeflute's probe from togepi reaches `/api/ping` over
+  the LAN. Everything else is effectively HTTPS-only: auth cookies are **always `Secure`**, so a
+  login over plain LAN HTTP simply doesn't stick, and the login page shows the ts.net URL instead.
+- `ProxyFix` (one hop) so Flask sees `X-Forwarded-Proto: https` from `tailscale serve`.
+- `tailscale serve` adds `Tailscale-User-Login`; record it in auth events as an audit trail. It
+  is **not** used for authentication — app accounts are, so a shared laptop ≠ shared identity.
+- Invite links are generated against the ts.net base URL (admin setting `public_base_url`).
+- The Flask dev server with reloader stays (not internet-facing; ≤ 10 users); `threaded=True`.
+
+### 7.8 Sizing — expect 4–5 users, design for 10
+Basis: Mike's archive is 108 files → 311k `record` rows (~2.9k rows and ~100 KB of FIT per
+activity, 0.6 s parse). A long-time Garmin user back-filling a whole account is ~1,500–2,500
+activities.
+
+| Resource | Per heavy user | × 10 | Design response |
+|---|---|---|---|
+| `records` rows | ~6 M | **~60 M worst case**, realistically 15–25 M | `records` as `WITHOUT ROWID`, PK `(session_id, t)` — clustered, so a session's series is one sequential range read and there is no second index to store. Narrow types (ints, scaled ints for lat/lon). Every chart endpoint reads one session or pre-aggregated tables, **never scans `records` across sessions** |
+| DB size | ~0.5 GB | ~5 GB | fine for SQLite; WAL, `busy_timeout=5000`, `synchronous=NORMAL`. Nightly `VACUUM INTO` backup to snorlax |
+| FIT originals | ~250 MB | ~2.5 GB | default quota 5 GB / 5,000 files per user, admin-adjustable |
+| Cross-activity analytics (CTL, volume, PRs, power curve) | — | — | computed **at import** into `sessions` / `best_efforts` / `zone_time` / a `daily_load` table, so dashboards are indexed lookups regardless of user count |
+| Parse CPU | ~20 min per full back-fill | — | **one job worker process, one queue**: imports, reparses and syncs are serialized. It is also the only bulk writer, so SQLite's single-writer limit never shows up as `database is locked` in a web request |
+| Garmin requests | back-fill ~35 min at 1 req/s; nightly incremental 1–2 requests | one source IP for all | **one back-fill at a time**, queued; nightly run does incrementals for everyone first, then continues at most one pending back-fill; global daily request budget (config, start at 3,000); a 429 ends the night |
+| Web concurrency | — | a few simultaneous | threaded dev server is enough; all heavy work is in the worker |
+| Reparse-all after a schema change | 20 min | ~3.5 h | per-user, resumable, background; the app stays usable and shows "re-indexing n/m" |
+
+Beyond ~10 users or any public exposure the answers change (Postgres, waitress/gunicorn, a real
+queue, per-user Garmin egress) — explicitly not designed for.
+
 ---
 
 ## 8. Phases and task tracker
@@ -407,7 +443,7 @@ CLI: `fitmon-admin create-user | reset-password | list-users | disable-user` (ri
 | 0.1 | Claim port 8640 / munchlax in `D:\hw\pokeflute\data\ports.json`, commit + push there | 0 Groundwork | ☐ |
 | 0.2 | `pyproject.toml` (uv), deps: flask, flask-sqlalchemy, rich, rich-argparse, `cryptography`, `garminconnect` (pinned) | 0 | ☐ |
 | 0.3 | `__version__`, header, `/api/ping`, bind 0.0.0.0 + new port, **debugger off / reloader on**, event logger, settings service | 0 | ☐ |
-| 0.4 | Move runtime data to `~/fitmon/` (per-user layout `users/<id>/`); document split in `CLAUDE.md`; migrate the 16 uploaded files to user 1 | 0 | ☐ |
+| 0.4 | Move runtime data to `~/fitmon/` (per-user layout `users/<id>/`); document split in `CLAUDE.md`; migrate the 16 uploaded files to user 1; check free disk on munchlax against §7.8 | 0 | ☐ |
 | 0.5 | Fix `sub_sport` typo (quick win, independent of rewrite) | 0 | ☐ |
 | A.1 | `users` / `device_tokens` / `invites` tables; scrypt hashing; generated `SECRET_KEY`; `fitmon-admin` CLI (bootstrap + password reset) | A Auth | ☐ |
 | A.2 | `/api/auth/*`: login, logout, remember-me 90-day device tokens (hashed at rest, sliding), devices list + revoke, password change; login page; login throttling; auth events | A | ☐ |
@@ -415,7 +451,8 @@ CLI: `fitmon-admin create-user | reset-password | list-users | disable-user` (ri
 | A.4 | Invites + Admin tab (users, invites, disable); scan-directory / watch-folder gated to admin | A | ☐ |
 | A.5 | Untrusted-input hardening: zip limits, per-user quota, parse time/row limits in the job worker | A | ☐ |
 | A.6 | Account: download my data, delete my account | A | ☐ |
-| 1.1 | New schema (§2) **with `user_id` ownership from the start** + `schema_version` + drop-and-reparse | 1 Data | ☐ |
+| 1.1 | New schema (§2) **with `user_id` ownership from the start** + `schema_version` + drop-and-reparse; `records` `WITHOUT ROWID` clustered on `(session_id, t)`; WAL + busy_timeout pragmas (§7.8) | 1 Data | ☐ |
+| 1.1b | Job worker process + queue (imports, reparses, syncs serialized; progress rows the UI polls); resumable per-user reparse | 1 | ☐ |
 | 1.2 | Parser rewrite → `ParsedFile`; sessions/laps/records/lengths/sets/devices/profile | 1 | ☐ |
 | 1.3 | Tolerant `partial` import for corrupt files (tri file = test case; keep messages read before the error) | 1 | ☐ |
 | 1.4 | Importer: `import_bytes()` core, hash dedupe, recursive scan, zip, job status; `fitmon-import` CLI (rich, `-d/--dir`, `-v`) | 1 | ☐ |
@@ -440,7 +477,9 @@ CLI: `fitmon-admin create-user | reset-password | list-users | disable-user` (ri
 | 4.2 | Research remaining Garmin-private messages (140, 79, 141, 233 …) → `docs/garmin-unknown-messages-research.md` with citations, *before* coding against them | 4 | ☐ |
 | 4.3 | Surface what 4.1/4.2 unlock (recovery time, training status, device time-in-zone …) | 4 | ☐ |
 | 5.1 | Settings tab complete; mobile `@media (max-width: 480px)` pass | 5 Ship | ☐ |
-| 5.2 | Deploy per `D:\hw\pokeflute\docs\deploying-a-new-munchlax-service.md`; `~/services-registry/fitmon.json`; `tools/deploy.sh` | 5 | ☐ |
+| 5.2 | Deploy per `D:\hw\pokeflute\docs\deploying-a-new-munchlax-service.md`; `~/services-registry/fitmon.json`; `tools/deploy.sh`; launchd units for web + job worker | 5 | ☐ |
+| 5.3 | `tailscale serve` HTTPS front on munchlax, `ProxyFix`, `public_base_url`, always-`Secure` cookies; **verify a shared-node guest can reach it**; document guest onboarding in `docs/guest-onboarding.md` | 5 | ☐ |
+| 5.4 | Nightly `VACUUM INTO` DB backup + FIT originals rsync to snorlax (`tools/munchlax/`) | 5 | ☐ |
 
 Each task = one commit with a version bump, pushed.
 
@@ -449,7 +488,7 @@ PR logs built on a two-year-stale archive can't be sanity-checked. S.5 lands wit
 (2.1); S.6 after deploy; S.7–S.8 after phase 3.
 Auth: A.1–A.3 come **before phase 1's importer and before any UI work**, so no route is ever
 written unscoped; A.4–A.6 can trail until just before anyone else is invited. Nobody but Mike
-gets an account until A.1–A.5 and the HTTPS question (§11 Q1) are done.
+gets an account until A.1–A.5 and the Tailscale HTTPS front (5.3) are done.
 
 ---
 
@@ -467,13 +506,12 @@ is source-agnostic if that changes).
 3. **Stale archive** is solved by automating export (§6), not by another manual pull.
 4. **Keep Flask-SQLAlchemy**; bulk-insert `records` with `executemany`.
 5. **Garmin MFA: off** (confirmed by Mike). So login can run non-interactively from `$GARMIN_EMAIL` / `$GARMIN_PASSWORD` for that one invocation — no TTY needed over SSH to munchlax. The MFA prompt path stays in the code (Garmin can turn it on), but re-login is a one-liner, not a chore.
-
 6. **User auth, multi-user** — friends and family will try it (§7). Supersedes the earlier "no auth, LAN-only" stance and answers the phase-B privacy question.
+7. **Access is via Tailscale** (§7.7) — `tailscale serve` on munchlax for HTTPS; no public URL, no Funnel.
+8. **Web "Connect Garmin" is built but off by default per user**; an admin enables it per person. Upload / export-zip is what a new guest gets.
+9. **Sizing: expect 4–5 users, design for 10** (§7.8).
 
 ## 11. Open questions
-1. **How do friends and family reach it?** This decides HTTPS, and HTTPS gates the web Garmin login (§7.5).
-   - *LAN only* (visitors on the house Wi-Fi): nothing to build, but plain HTTP → passwords and cookies in clear on the LAN; Garmin connect stays CLI/upload-only.
-   - **Tailscale (recommended):** already in use on the fleet. `tailscale serve` on munchlax gives a real HTTPS cert and a stable name, reachable only by devices Mike has shared the node with — no public attack surface, and the Flask reloader setup can stay.
-   - *Public URL* (Tailscale Funnel / Cloudflare Tunnel): easiest for guests, but the app is then on the internet — needs waitress instead of the dev server, stricter throttling, and a real look at the pokeflute "reloader, no restart" convention. Not recommended for a first version.
-2. **Who holds the Garmin tokens?** Comfortable with this server storing friends' Garmin tokens (§7.5), or should guests be upload-only and the web Connect flow be Mike/admin-only to start? Recommendation: build it, ship it **off by default per user**, admin enables it per person.
-3. Roughly how many people? (A handful is fine on SQLite + one source IP for Garmin; dozens is a different design.)
+None blocking. To verify during the work rather than decide now: that a Tailscale *shared-node*
+guest can reach the `tailscale serve` HTTPS name (5.3), and free disk on munchlax against the
+§7.8 estimate (0.4).
