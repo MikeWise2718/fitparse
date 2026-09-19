@@ -443,7 +443,7 @@ queue, per-user Garmin egress) — explicitly not designed for.
 | 0.1 | Claim port 8640 / munchlax in `D:\hw\pokeflute\data\ports.json`, commit + push there | 0 Groundwork | ✅ 8640 claimed, pushed (pokeflute e837494) |
 | 0.2 | `pyproject.toml` (uv), deps: flask, flask-sqlalchemy, rich, rich-argparse, `cryptography`, `garminconnect` (pinned) | 0 | ✅ |
 | 0.3 | `__version__`, header, `/api/ping`, bind 0.0.0.0 + new port, **debugger off / reloader on**, event logger, settings service | 0 | ✅ |
-| 0.4 | Move runtime data to `~/fitmon/` (per-user layout `users/<id>/`); document split in `CLAUDE.md`; migrate the 16 uploaded files to user 1; check free disk on munchlax against §7.8 | 0 | ◐ runtime data is in `~/fitmon/`; munchlax disk not checked yet; v1 `uploads/` not migrated (all 16 are also in `D:it`) |
+| 0.4 | Move runtime data to `~/fitmon/` (per-user layout `users/<id>/`); document split in `CLAUDE.md`; migrate the 16 uploaded files to user 1; check free disk on munchlax against §7.8 | 0 | ✅ runtime data is in `~/fitmon/`; munchlax has 315 GB free (2026-09-19) against the ~8 GB worst case in §7.8, `uv` present, port 8640 unused; v1 `uploads/` not migrated (all 16 are also in `D:it`) |
 | 0.5 | Fix `sub_sport` typo (quick win, independent of rewrite) | 0 | ✅ (fixed by the parser rewrite) |
 | A.1 | `users` / `device_tokens` / `invites` tables; scrypt hashing; generated `SECRET_KEY`; `fitmon-admin` CLI (bootstrap + password reset) | A Auth | ✅ |
 | A.2 | `/api/auth/*`: login, logout, remember-me 90-day device tokens (hashed at rest, sliding), devices list + revoke, password change; login page; login throttling; auth events | A | ✅ |
@@ -478,7 +478,7 @@ queue, per-user Garmin egress) — explicitly not designed for.
 | 4.3 | Surface what 4.1/4.2 unlock (recovery time, training status, device time-in-zone …) | 4 | ☐ |
 | 5.1 | Settings tab complete; mobile `@media (max-width: 480px)` pass | 5 Ship | ◐ written, not checked on a phone |
 | 5.2 | Deploy per `D:\hw\pokeflute\docs\deploying-a-new-munchlax-service.md`; `~/services-registry/fitmon.json`; `tools/deploy.sh`; launchd units for web + job worker | 5 | ◐ `deploy/` + `docs/fitmon-deploy.md` prepared, not run |
-| 5.3 | `tailscale serve` HTTPS front on munchlax, `ProxyFix`, `public_base_url`, always-`Secure` cookies; **verify a shared-node guest can reach it**; document guest onboarding in `docs/guest-onboarding.md` | 5 | ☐ |
+| 5.3 | (2026-09-19: no `tailscale` CLI on munchlax's SSH PATH or in `/Applications/Tailscale.app` - find or install it first) `tailscale serve` HTTPS front on munchlax, `ProxyFix`, `public_base_url`, always-`Secure` cookies; **verify a shared-node guest can reach it**; document guest onboarding in `docs/guest-onboarding.md` | 5 | ☐ |
 | 5.4 | Nightly `VACUUM INTO` DB backup + FIT originals rsync to snorlax (`tools/munchlax/`) | 5 | ◐ script prepared, not installed |
 Each task = one commit with a version bump, pushed.
 
@@ -508,6 +508,14 @@ Deviations from the plan: no `daily_load` table (sessions carry `load`; CTL is o
 query over an indexed column - add the table only if that ever shows up in a profile);
 `/api/import/reparse-all` became `/api/import/reindex`; runtime scaffolding lives in `deploy/`
 (the fleet convention) rather than `tools/`.
+
+Legacy `fitparse.py`, the `*.bat` launchers and `tri2025fit.out` are deliberately still here:
+they are the only fallback until the Explorer tab has been seen working. Remove them then (2.3).
+
+The library's own suite (`python -m unittest discover -s tests`): 28 of 29 pass.
+`test_mismatched_field_size` fails on Python 3.13 independently of fitmon (the library is
+untouched): it asserts that *every* captured warning is its own, and 3.13 adds
+`DeprecationWarning`s for `datetime.utcfromtimestamp()` in `fitparse/processors.py`.
 
 **Not verified:** the UI has not been looked at in a browser (the agent may not type passwords
 into one), nothing has touched Garmin's servers, nothing is deployed.
