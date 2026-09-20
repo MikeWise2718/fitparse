@@ -90,3 +90,9 @@ progress { width: 100%; height: 10px; }
     th, td { padding: 5px 6px; } .filters { padding: 6px 8px; }
     label.field input, label.field select { max-width: none; }
 }
+
+/* Activities table: range filters */
+.act-filter-row { gap: 12px; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.act-filter-row .fgroup { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+.act-filter-row input { width: 68px; padding: 3px 6px; font-size: 12px; }
+@media (max-width: 480px) { .act-filter-row input { width: 56px; } }

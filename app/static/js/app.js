@@ -185,29 +185,82 @@ const ACT_COLS = [
     {label: 'Distance', sort: 'distance_m', num: 1, get: (r) => fmt.dist(r.distance_m, r.sport)},
     {label: 'Time', sort: 'timer_s', num: 1, get: (r) => fmt.dur(r.timer_s)},
     {label: 'Pace / speed', sort: 'avg_speed', num: 1, get: (r) => fmt.speed(r.avg_speed, r.sport)},
-    // avg / max together, the way Garmin shows it: the average alone hides whether an activity
-    // was steady or had hard efforts in it.
-    {label: 'HR avg / max', sort: 'avg_hr', num: 1, html: (r) => r.avg_hr
-        ? `${r.avg_hr}<span class="muted"> / ${r.max_hr ?? '–'}</span>` : ''},
+    // Separate columns, not "avg / max" in one: each is independently sortable and filterable.
+    {label: 'Avg HR', sort: 'avg_hr', num: 1, get: (r) => r.avg_hr},
+    {label: 'Max HR', sort: 'max_hr', num: 1, get: (r) => r.max_hr},
     {label: 'Power', sort: 'avg_power', num: 1, get: (r) => fmt.num(r.avg_power)},
     {label: 'NP', num: 1, get: (r) => fmt.num(r.norm_power)}, {label: 'Climb', sort: 'ascent_m', num: 1, get: (r) => fmt.elev(r.ascent_m)},
     {label: 'TE', sort: 'te_aerobic', num: 1, get: (r) => r.te_aerobic != null ? `${fmt.num(r.te_aerobic, 1)} / ${fmt.num(r.te_anaerobic, 1)}` : ''},
     {label: 'VO2', sort: 'vo2max', num: 1, get: (r) => fmt.num(r.vo2max, 1)},
     {label: 'Load', sort: 'load', num: 1, html: (r) => r.load != null ? `${fmt.num(r.load)} <span class="muted">${r.load_model === 'tss' ? 'W' : '♥'}</span>` : ''},
 ];
+// Range filters offered above the activities table. `to`/`from` convert between the unit a
+// person types and the metres/seconds/m-per-s the API stores.
+const ACT_FILTERS = [
+    {key: 'distance_m', label: 'Distance', unit: () => statute() ? 'mi' : 'km',
+     to: (v) => v * (statute() ? 1609.344 : 1000), from: (v) => v / (statute() ? 1609.344 : 1000)},
+    {key: 'timer_s', label: 'Time', unit: () => 'min', to: (v) => v * 60, from: (v) => v / 60},
+    {key: 'avg_hr', label: 'Avg HR', unit: () => 'bpm'},
+    {key: 'max_hr', label: 'Max HR', unit: () => 'bpm'},
+    {key: 'avg_power', label: 'Power', unit: () => 'W'},
+    {key: 'ascent_m', label: 'Climb', unit: () => statute() ? 'ft' : 'm',
+     to: (v) => statute() ? v / 3.28084 : v, from: (v) => statute() ? v * 3.28084 : v},
+    {key: 'load', label: 'Load', unit: () => ''},
+    {key: 'vo2max', label: 'VO2 max', unit: () => ''},
+    {key: 'te_aerobic', label: 'Training effect', unit: () => ''},
+];
+
+function actFilterParams() {
+    const out = {};
+    ACT_FILTERS.forEach((f) => ['min', 'max'].forEach((side) => {
+        const el = $(`act-f-${side}-${f.key}`);
+        if (el && el.value !== '') {
+            const v = Number(el.value);
+            if (!isNaN(v)) out[`${side}_${f.key}`] = f.to ? f.to(v) : v;
+        }
+    }));
+    return out;
+}
+
+function activeFilterCount() { return Object.keys(actFilterParams()).length; }
+
+function drawActFilters() {
+    const box = $('act-filters');
+    if (box.dataset.built) return;
+    box.dataset.built = '1';
+    box.innerHTML = ACT_FILTERS.map((f) => `<span class="fgroup">${esc(f.label)}
+        <input id="act-f-min-${f.key}" type="number" step="any" placeholder="min" title="minimum ${esc(f.label)}">
+        <input id="act-f-max-${f.key}" type="number" step="any" placeholder="max" title="maximum ${esc(f.label)}">
+        <span class="muted">${esc(f.unit())}</span></span>`).join('')
+        + '<button id="act-f-clear">Clear filters</button>';
+    let timer;
+    box.querySelectorAll('input').forEach((el) => el.addEventListener('input', () => {
+        clearTimeout(timer); timer = setTimeout(() => loadActivities(true), 350);
+    }));
+    $('act-f-clear').addEventListener('click', () => {
+        box.querySelectorAll('input').forEach((el) => { el.value = ''; });
+        loadActivities(true);
+    });
+}
+
+
 async function loadActivities(reset) {
     if (reset) { state.act.offset = 0; state.act.rows = []; }
+    drawActFilters();
     const q = query({q: $('act-search').value, sort: state.act.sort, dir: state.act.dir, offset: state.act.offset, limit: 100,
-                     hide_transitions: $('act-transitions').checked ? '0' : '1'});
+                     hide_transitions: $('act-transitions').checked ? '0' : '1', ...actFilterParams()});
     const data = await api('/api/activities?' + q);
     state.act.rows = state.act.rows.concat(data.activities);
-    $('act-count').textContent = `${state.act.rows.length} of ${data.total}`;
-    state.act.filtered = !data.total && ($('flt-from').value || $('flt-to').value || $('flt-sport').value || $('act-search').value);
+    const nf = activeFilterCount();
+    $('act-count').textContent = `${state.act.rows.length} of ${data.total}` + (nf ? ` · ${nf} filter${nf > 1 ? 's' : ''} active` : '');
+    state.act.filtered = !data.total && (nf || $('flt-from').value || $('flt-to').value || $('flt-sport').value || $('act-search').value);
     $('act-more').style.display = state.act.rows.length < data.total ? '' : 'none';
-    $('act-export').href = '/api/export/activities.csv?' + query();
+    $('act-export').href = '/api/export/activities.csv?' + query(actFilterParams());
     const el = table('act-table', ACT_COLS, state.act.rows, (r) => go('detail', r.id));
-    if (state.act.filtered) { el.querySelector('tbody td').innerHTML = 'No activities match the current date range, sport or search. <a id="act-show-all">Show all time</a>';
-        $('act-show-all').addEventListener('click', () => { setPreset('all'); $('flt-sport').value = ''; $('act-search').value = ''; state.rangeNote = ''; showNote(); loadActivities(true); }); }
+    if (state.act.filtered) { el.querySelector('tbody td').innerHTML = 'No activities match the current filters. <a id="act-show-all">Clear them all</a>';
+        $('act-show-all').addEventListener('click', () => { setPreset('all'); $('flt-sport').value = ''; $('act-search').value = '';
+            $('act-filters').querySelectorAll('input').forEach((el) => { el.value = ''; });
+            state.rangeNote = ''; showNote(); loadActivities(true); }); }
     el.querySelectorAll('th.sortable').forEach((th) => th.addEventListener('click', () => {
         const s = th.dataset.sort; state.act.dir = state.act.sort === s && state.act.dir === 'desc' ? 'asc' : 'desc'; state.act.sort = s; loadActivities(true); }));
 }

@@ -15,11 +15,18 @@ activities_bp = Blueprint('activities', __name__)
 
 LIST_COLUMNS = ['id', 'file_id', 'idx', 'name', 'sport', 'sub_sport', 'start_time', 'timer_s',
                 'elapsed_s', 'distance_m', 'calories', 'avg_hr', 'max_hr', 'avg_speed', 'avg_power',
-                'norm_power', 'ascent_m', 'te_aerobic', 'te_anaerobic', 'vo2max', 'load',
+                'norm_power', 'avg_cadence', 'decoupling', 'ascent_m', 'te_aerobic', 'te_anaerobic', 'vo2max', 'load',
                 'load_model', 'tss', 'trimp', 'has_gps', 'has_power', 'trimmed_s', 'avg_swolf', 'total_sets',
                 'volume_kg']
-SORTABLE = {'start_time', 'distance_m', 'timer_s', 'avg_hr', 'avg_power', 'load', 'vo2max', 'sport',
-            'te_aerobic', 'ascent_m', 'avg_speed'}
+SORTABLE = {'start_time', 'distance_m', 'timer_s', 'avg_hr', 'max_hr', 'avg_power', 'norm_power',
+            'load', 'vo2max', 'sport', 'te_aerobic', 'te_anaerobic', 'ascent_m', 'avg_speed',
+            'calories', 'avg_cadence', 'decoupling', 'tss'}
+
+# Numeric columns the list can be filtered on, as ?min_<name>= / ?max_<name>=. Server-side so a
+# filter applies to every activity, not just the page already loaded in the browser.
+FILTERABLE = {'distance_m', 'timer_s', 'avg_hr', 'max_hr', 'avg_power', 'norm_power', 'load',
+              'vo2max', 'ascent_m', 'avg_speed', 'te_aerobic', 'te_anaerobic', 'calories',
+              'avg_cadence', 'decoupling', 'tss'}
 
 
 def row_dict(obj, columns=None) -> dict:
@@ -47,6 +54,17 @@ def filtered_sessions():
         q = q.filter(Session.start_time >= start)
     if end:
         q = q.filter(Session.start_time < end + timedelta(days=1))
+    for name in FILTERABLE:
+        column = getattr(Session, name)
+        for prefix, op in (('min_', column.__ge__), ('max_', column.__le__)):
+            raw = request.args.get(prefix + name)
+            if raw not in (None, ''):
+                try:
+                    # A row with no value is excluded rather than treated as zero: "rides over
+                    # 200 W" should not sweep in every ride that recorded no power at all.
+                    q = q.filter(column.isnot(None), op(float(raw)))
+                except ValueError:
+                    pass
     return q
 
 

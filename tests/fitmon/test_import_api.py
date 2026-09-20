@@ -263,3 +263,42 @@ def test_trim_suggestion_finds_a_stalled_tail():
     assert sug and abs(sug['end_t'] - 3600) < 400 and sug['dropped_s'] > 1000
     assert metrics.suggest_trim(racing, 'running') is None          # a clean activity: no suggestion
     assert metrics.suggest_trim(racing[:100], 'running') is None    # too short to judge
+
+
+def test_activity_range_filters_are_server_side(app, alice, import_file):
+    """Filters must apply to every activity, not just the page the browser has loaded, and a
+    row with no value is excluded rather than counted as zero."""
+    from app.models import Session, db
+    import_file(alice.user_id, SAMPLE_RUN)
+    with app.app_context():
+        base = Session.query.one()
+        for day, dist, hr, mx, power in [('2026-02-01', 5000, 120, 150, None),
+                                         ('2026-02-02', 12000, 140, 175, 210.0),
+                                         ('2026-02-03', 21000, 155, 188, None)]:
+            db.session.add(Session(file_id=base.file_id, user_id=alice.user_id, sport='running',
+                                   start_time=datetime.fromisoformat(day + 'T09:00'),
+                                   distance_m=dist, avg_hr=hr, max_hr=mx, avg_power=power))
+        db.session.delete(base)
+        db.session.commit()
+
+    def dists(qs):
+        return sorted(a['distance_m'] for a in alice.get('/api/activities?' + qs).get_json()['activities'])
+
+    assert dists('') == [5000.0, 12000.0, 21000.0]
+    assert dists('min_distance_m=10000') == [12000.0, 21000.0]
+    assert dists('min_distance_m=10000&max_distance_m=15000') == [12000.0]
+    assert dists('min_max_hr=180') == [21000.0]                  # max HR is its own filter
+    assert dists('min_avg_hr=180') == []                         # and distinct from the average
+    # a run that recorded no power must not satisfy "power over 100"
+    assert dists('min_avg_power=100') == [12000.0]
+    assert dists('min_distance_m=nonsense') == [5000.0, 12000.0, 21000.0]   # bad input ignored
+    assert alice.get('/api/activities?min_distance_m=10000').get_json()['total'] == 2
+    # the CSV export honours them too
+    csv_rows = alice.get('/api/export/activities.csv?min_distance_m=10000').data.count(b'\n')
+    assert csv_rows == 3                                          # header + 2 rows
+
+
+def test_max_hr_is_sortable(alice, import_file):
+    import_file(alice.user_id, SAMPLE_RUN)
+    body = alice.get('/api/activities?sort=max_hr&dir=asc').get_json()
+    assert body['total'] == 1
