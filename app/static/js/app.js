@@ -69,7 +69,21 @@ const fmt = {
              return {400: '400 m', 1000: '1 km', 1609: '1 mile', 5000: '5 km', 10000: '10 km', 21097: 'half marathon', 42195: 'marathon'}[w] || `${w} m`; },
 };
 const tag = (s, sub) => `<span class="tag ${esc(s)}">${esc(fmt.sport(s, sub))}</span>`;
-const tile = (label, value, sub = '', cls = '') => `<div class="tile"><div class="label">${esc(label)}</div><div class="value ${cls}">${value || '–'}</div><div class="sub">${sub}</div></div>`;
+const tile = (label, value, sub = '', cls = '', help = '') => `<div class="tile"${help ? ` title="${esc(help)}"` : ''}><div class="label">${esc(label)}${help ? ' <span class="muted" style="cursor:help">ⓘ</span>' : ''}</div><div class="value ${cls}">${value || '–'}</div><div class="sub">${sub}</div></div>`;
+
+function decouplingHelp(s) {
+    // The textbook reading assumes HR drifts UP at a held pace. The opposite pattern - pace
+    // collapsing while HR falls - degrades the same ratio for a different reason, so say which
+    // one this activity actually was rather than quoting the threshold at every case.
+    const lines = ['Aerobic decoupling: how well output per heartbeat held up.',
+        'The activity is split in half; each half gets ' + (s.has_power ? 'power' : 'speed') + ' ÷ heart rate.',
+        `Here that ratio ${s.decoupling >= 0 ? 'fell' : 'rose'} by ${Math.abs(s.decoupling).toFixed(1)} % from the first half to the second.`,
+        'Under 5 % is the usual mark of an aerobically durable effort (Friel).'];
+    if (s.decoupling > 5) lines.push('', 'Above that, something gave way - fuel, heat, or simply going beyond the duration your aerobic base supports.',
+        'Which one shows in the shape: heart rate drifting UP at a held pace points to heat and dehydration, while pace collapsing as heart rate FALLS points to running out of fuel, because a depleted muscle cannot demand the output.');
+    lines.push('', 'Caveat: a rule of thumb from steady training efforts. A triathlon run leg fades somewhat whatever you do, and any time left recording after you stopped is counted in.');
+    return lines.join('\n');
+}
 
 // ---------------------------------------------------------------- filters and routing
 function range() { const p = new URLSearchParams(); if ($('flt-from').value) p.set('from', $('flt-from').value);
@@ -221,7 +235,13 @@ async function loadDetail(id) {
         tile('Training effect', s.te_aerobic != null ? fmt.num(s.te_aerobic, 1) : '', s.te_anaerobic != null ? `anaerobic ${fmt.num(s.te_anaerobic, 1)}` : ''),
         s.vo2max ? tile('VO2 max', fmt.num(s.vo2max, 1)) : '', s.ascent_m ? tile('Climb', fmt.elev(s.ascent_m), `down ${fmt.elev(s.descent_m)}`) : '',
         tile('Cadence', fmt.num(s.avg_cadence), s.max_cadence ? `max ${fmt.num(s.max_cadence)}` : ''), tile('Calories', s.calories),
-        s.decoupling != null ? tile('Decoupling', `${fmt.num(s.decoupling, 1)} %`, '< 5 % = aerobically durable', Math.abs(s.decoupling) < 5 ? 'up' : 'down') : '',
+        // A large NEGATIVE value is not durability: it means the second half was faster per
+        // heartbeat, i.e. a negative split or a warm-up followed by the real effort.
+        s.decoupling != null ? tile('Decoupling', `${fmt.num(s.decoupling, 1)} %`,
+            s.decoupling < -5 ? `${s.has_power ? 'power' : 'speed'} per heartbeat rose - negative split or a slow start`
+                : s.decoupling <= 5 ? 'held up · under 5 % is durable'
+                : `${s.has_power ? 'power' : 'speed'} per heartbeat fell in the second half`,
+            s.decoupling > 5 ? 'down' : s.decoupling >= -5 ? 'up' : '', decouplingHelp(s)) : '',
         s.avg_temp != null ? tile('Temperature', `${fmt.num(s.avg_temp)} °C`) : '',
     ].join('');
 
