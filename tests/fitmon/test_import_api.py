@@ -190,12 +190,15 @@ def test_vo2max_series_plots_only_real_recalculations(app, alice, import_file):
     import_file(alice.user_id, SAMPLE_VO2)
     with app.app_context():
         base = Session.query.one()
-        rows = [('cycling', '2026-01-01', 47.0), ('cycling', '2026-01-02', 47.0),   # carried forward
-                ('cycling', '2026-01-03', 46.0), ('walking', '2026-01-04', 46.0),   # never measured
-                ('swimming', '2026-01-05', 46.0), ('running', '2026-01-06', 44.0)]
-        for sport, day, value in rows:
+        # `carried` is what the importer would have computed for each row (see
+        # importer._vo2_is_carried); the series filters on the stored flag.
+        rows = [('cycling', '2026-01-01', 47.0, False), ('cycling', '2026-01-02', 47.0, True),
+                ('cycling', '2026-01-03', 46.0, False), ('walking', '2026-01-04', 46.0, True),
+                ('swimming', '2026-01-05', 46.0, True), ('running', '2026-01-06', 44.0, False)]
+        for sport, day, value, carried in rows:
             db.session.add(Session(file_id=base.file_id, user_id=alice.user_id, sport=sport,
-                                   start_time=datetime.fromisoformat(day + 'T08:00'), vo2max=value))
+                                   start_time=datetime.fromisoformat(day + 'T08:00'), vo2max=value,
+                                   vo2max_carried=carried))
         db.session.delete(base)
         db.session.commit()
         series = fitness.vo2max_series(alice.user_id, None, None, None, None)
@@ -361,3 +364,43 @@ def test_excluded_sessions_leave_records_and_curves(app, alice, import_file):
     alice.post(f'/api/sessions/{sid}/exclude', json={'excluded': True})
     assert alice.get('/api/trends/power-curve').get_json()['all_time'] == []
     assert alice.get('/api/fitness').get_json()['days'] == []
+
+
+def test_carried_forward_vo2max_is_flagged(app, alice, import_file):
+    """All 89 of Mike's 2026 gravel rides carry a VO2 max and none recorded power; one value
+    repeats across 68 consecutive rides. Such a value is not a measurement of that ride."""
+    from app.models import Session, db
+    import_file(alice.user_id, SAMPLE_VO2)
+    with app.app_context():
+        base = Session.query.one()
+        assert base.vo2max and base.sport == 'running'
+        assert not base.vo2max_carried              # first of its sport: a genuine value
+
+    # importing the same activity again under a cycling sport (no power) marks it carried
+    with app.app_context():
+        from app.services.importer import _vo2_is_carried
+        assert _vo2_is_carried(alice.user_id,
+                               {'sport': 'cycling', 'vo2max': base.vo2max, 'has_power': False},
+                               datetime.fromisoformat('2027-01-01T08:00'))
+
+    body = alice.get('/api/activities').get_json()['activities'][0]
+    assert body['vo2max'] and body['vo2max_carried'] is False    # exposed to the UI
+
+
+def test_vo2_carried_detection_rules(app, alice, import_file):
+    from app.models import Session
+    from app.services.importer import _vo2_is_carried
+    import_file(alice.user_id, SAMPLE_VO2)
+    with app.app_context():
+        prev = Session.query.one()
+        at = datetime.fromisoformat('2027-01-01T08:00')
+        # cycling without power is always carried, whatever the value
+        assert _vo2_is_carried(alice.user_id, {'sport': 'cycling', 'vo2max': 99.0, 'has_power': False}, at)
+        assert not _vo2_is_carried(alice.user_id, {'sport': 'cycling', 'vo2max': 99.0, 'has_power': True}, at)
+        # a sport that cannot produce one
+        assert _vo2_is_carried(alice.user_id, {'sport': 'swimming', 'vo2max': 40.0, 'has_power': False}, at)
+        # running: carried only when unchanged from the previous run
+        assert _vo2_is_carried(alice.user_id, {'sport': 'running', 'vo2max': prev.vo2max, 'has_power': False}, at)
+        assert not _vo2_is_carried(alice.user_id, {'sport': 'running', 'vo2max': prev.vo2max + 1, 'has_power': False}, at)
+        # no value at all is not "carried"
+        assert not _vo2_is_carried(alice.user_id, {'sport': 'running', 'vo2max': None, 'has_power': False}, at)

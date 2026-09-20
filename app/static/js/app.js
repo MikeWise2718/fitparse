@@ -191,7 +191,9 @@ const ACT_COLS = [
     {label: 'Power', sort: 'avg_power', num: 1, get: (r) => fmt.num(r.avg_power)},
     {label: 'NP', num: 1, get: (r) => fmt.num(r.norm_power)}, {label: 'Climb', sort: 'ascent_m', num: 1, get: (r) => fmt.elev(r.ascent_m)},
     {label: 'TE', sort: 'te_aerobic', num: 1, get: (r) => r.te_aerobic != null ? `${fmt.num(r.te_aerobic, 1)} / ${fmt.num(r.te_anaerobic, 1)}` : ''},
-    {label: 'VO2', sort: 'vo2max', num: 1, get: (r) => fmt.num(r.vo2max, 1)},
+    {label: 'VO2', sort: 'vo2max', num: 1, html: (r) => r.vo2max == null ? ''
+        : r.vo2max_carried ? `<span class="muted" title="Carried over from an earlier activity, not measured here">${fmt.num(r.vo2max, 1)}</span>`
+        : fmt.num(r.vo2max, 1)},
     {label: 'Load', sort: 'load', num: 1, html: (r) => r.load != null ? `${fmt.num(r.load)} <span class="muted">${r.load_model === 'tss' ? 'W' : '♥'}</span>` : ''},
 ];
 // Range filters offered above the activities table. `to`/`from` convert between the unit a
@@ -289,7 +291,15 @@ async function loadDetail(id) {
         s.tss != null ? tile('TSS / IF', fmt.num(s.tss), `IF ${fmt.num(s.intensity_factor, 2)}`) : '',
         tile('Load', fmt.num(s.load), s.load_model === 'tss' ? 'from power' : s.load_model ? 'from heart rate' : ''),
         tile('Training effect', s.te_aerobic != null ? fmt.num(s.te_aerobic, 1) : '', s.te_anaerobic != null ? `anaerobic ${fmt.num(s.te_anaerobic, 1)}` : ''),
-        s.vo2max ? tile('VO2 max', fmt.num(s.vo2max, 1)) : '', s.ascent_m ? tile('Climb', fmt.elev(s.ascent_m), `down ${fmt.elev(s.descent_m)}`) : '',
+        s.vo2max ? tile('VO2 max', fmt.num(s.vo2max, 1),
+            s.vo2max_carried ? 'carried over, not measured here' : 'recalculated on this activity',
+            s.vo2max_carried ? 'muted' : '',
+            s.vo2max_carried
+                ? 'The watch wrote its stored estimate into this file without recalculating. '
+                  + (s.sport === 'cycling' ? 'Cycling VO2 max needs a power meter, and this ride recorded no power.'
+                     : ['running', 'cycling'].includes(s.sport) ? 'The value is unchanged from your previous activity in this sport.'
+                     : 'Garmin only estimates VO2 max for running and cycling; other sports inherit the last value.')
+                : 'The watch computed this value from this activity.') : '', s.ascent_m ? tile('Climb', fmt.elev(s.ascent_m), `down ${fmt.elev(s.descent_m)}`) : '',
         tile('Cadence', fmt.num(s.avg_cadence), s.max_cadence ? `max ${fmt.num(s.max_cadence)}` : ''), tile('Calories', s.calories),
         // A large NEGATIVE value is not durability: it means the second half was faster per
         // heartbeat, i.e. a negative split or a warm-up followed by the real effort.

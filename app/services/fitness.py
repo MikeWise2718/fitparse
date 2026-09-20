@@ -100,17 +100,13 @@ def vo2max_series(user_id: int, sport: str | None, sub_sport: str | None, start,
         q = q.filter(Session.start_time >= start)
     if end:
         q = q.filter(Session.start_time < end + timedelta(days=1))
-    rows = q.order_by(Session.start_time).all()
-    out, last = [], {}
-    for s in rows:
-        # An unchanged value means the watch did not recalculate (cycling needs a power meter,
-        # so a flat run of identical readings is one estimate, not many). Plot the changes.
-        if changes_only and last.get(s.sport) == s.vo2max:
-            continue
-        last[s.sport] = s.vo2max
-        out.append({'id': s.id, 'at': s.start_time, 'sport': s.sport, 'sub_sport': s.sub_sport,
-                    'vo2max': s.vo2max})
-    return out
+    if changes_only:
+        # Plot only genuine recalculations. The flag is computed at import (importer.
+        # _vo2_is_carried) so the chart and the activity page cannot disagree about it.
+        q = q.filter(Session.vo2max_carried.is_(False))
+    return [{'id': s.id, 'at': s.start_time, 'sport': s.sport, 'sub_sport': s.sub_sport,
+             'vo2max': s.vo2max, 'carried': s.vo2max_carried}
+            for s in q.order_by(Session.start_time).all()]
 
 
 def garmin_vo2max_series(user_id: int, start=None, end=None) -> list:

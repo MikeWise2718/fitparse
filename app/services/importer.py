@@ -105,6 +105,7 @@ def index_parsed(home: Path, file_row: FitFile, parsed: ParsedFile) -> None:
             metrics.apply_trim(sess, trims[sess['idx']])
         metrics.compute_session(sess, zones, load_model)
         sess['excluded'] = sess['idx'] in excluded
+        sess['vo2max_carried'] = _vo2_is_carried(user_id, sess, start)
         row = Session(file_id=file_row.id, user_id=user_id, **_clean(sess, Session))
         if garmin and garmin.name and len(parsed.sessions) == 1:
             row.name = garmin.name
@@ -125,6 +126,31 @@ def index_parsed(home: Path, file_row: FitFile, parsed: ParsedFile) -> None:
         if sess['_zones']:
             db.session.execute(ZoneTime.__table__.insert(),
                                [{**z, 'session_id': sid} for z in sess['_zones']])
+
+
+# Garmin only estimates VO2 max for running, and for cycling when power is recorded. It writes
+# its current stored value into every activity file regardless, so most values are repeats.
+VO2_MEASURABLE_SPORTS = ('running', 'cycling')
+
+
+def _vo2_is_carried(user_id: int, sess: dict, at) -> bool:
+    """Is this session's VO2 max a repeat of the stored estimate rather than a fresh one?
+
+    Three ways it can be: the sport cannot produce one; cycling without power; or the value is
+    identical to the most recent earlier activity's. In this archive one value (47.65) repeats
+    across 68 consecutive gravel rides, none of which recorded power.
+    """
+    if sess.get('vo2max') is None:
+        return False
+    if sess.get('sport') not in VO2_MEASURABLE_SPORTS:
+        return True
+    if sess.get('sport') == 'cycling' and not sess.get('has_power'):
+        return True
+    previous = (Session.query
+                .filter(Session.user_id == user_id, Session.vo2max.isnot(None),
+                        Session.sport == sess['sport'], Session.start_time < at)
+                .order_by(Session.start_time.desc()).first())
+    return previous is not None and previous.vo2max == sess['vo2max']
 
 
 def _find_twin(user_id: int, parsed: ParsedFile):

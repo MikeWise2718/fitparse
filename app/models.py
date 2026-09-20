@@ -176,6 +176,10 @@ class Session(db.Model):
     start_lat = db.Column(db.Float)
     start_lon = db.Column(db.Float)
     vo2max = db.Column(db.Float)
+    # True when the watch merely repeated its stored estimate into this file rather than
+    # recalculating: cycling needs a power meter, and non-running/cycling sports never
+    # produce one at all. A carried-forward value is not a measurement of this activity.
+    vo2max_carried = db.Column(db.Boolean, nullable=False, default=False)
     # derived at import (services/metrics.py)
     n_records = db.Column(db.Integer, default=0)
     trimmed_s = db.Column(db.Integer)      # set when a manual trim shortened this leg

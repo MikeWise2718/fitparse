@@ -15,7 +15,8 @@ activities_bp = Blueprint('activities', __name__)
 
 LIST_COLUMNS = ['id', 'file_id', 'idx', 'name', 'sport', 'sub_sport', 'start_time', 'timer_s',
                 'elapsed_s', 'distance_m', 'calories', 'avg_hr', 'max_hr', 'avg_speed', 'avg_power',
-                'norm_power', 'avg_cadence', 'decoupling', 'ascent_m', 'te_aerobic', 'te_anaerobic', 'vo2max', 'load',
+                'norm_power', 'avg_cadence', 'decoupling', 'ascent_m', 'te_aerobic', 'te_anaerobic', 'vo2max',
+                'vo2max_carried', 'load',
                 'load_model', 'tss', 'trimp', 'has_gps', 'has_power', 'trimmed_s', 'excluded', 'avg_swolf', 'total_sets',
                 'volume_kg']
 SORTABLE = {'start_time', 'distance_m', 'timer_s', 'avg_hr', 'max_hr', 'avg_power', 'norm_power',
