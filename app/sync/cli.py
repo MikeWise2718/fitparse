@@ -15,6 +15,31 @@ from rich_argparse import RichHelpFormatter
 
 console = Console()
 
+# Outside the repo on purpose: a gitignored file inside it is one `git add -f` from GitHub.
+DEFAULT_CREDENTIALS = os.path.join(os.path.expanduser('~'), '.fitmon', 'garmin.env')
+PLACEHOLDER = 'PUT-'
+
+
+def read_credentials_file(path: str) -> dict:
+    """KEY=VALUE lines; `#` comments; optional quotes. Read as data - never sourced by a shell,
+    so `$`, backticks and spaces in a password are taken literally. Unfilled placeholders and
+    empty values are ignored, so a half-edited template falls back to the prompt."""
+    if not path or not os.path.isfile(path):
+        return {}
+    out = {}
+    with open(path, encoding='utf-8-sig') as fh:        # -sig: Windows editors like to add a BOM
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            key, value = line.split('=', 1)
+            key, value = key.strip(), value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in '"\'':
+                value = value[1:-1]
+            if key in ('GARMIN_EMAIL', 'GARMIN_PASSWORD') and value and not value.startswith(PLACEHOLDER):
+                out[key] = value
+    return out
+
 
 class ConsoleProgress:
     def update(self, progress, message=None, total=None, force=False):
@@ -35,8 +60,14 @@ def cmd_login(app, args) -> int:
     if not user:
         console.print(f'[red]No such user:[/red] {args.username}')
         return 1
-    email = args.email or os.getenv('GARMIN_EMAIL') or console.input('Garmin Connect email: ')
-    password = os.getenv('GARMIN_PASSWORD') or getpass.getpass('Garmin Connect password: ')
+    creds_path = args.credentials or DEFAULT_CREDENTIALS
+    creds = read_credentials_file(creds_path)
+    if creds:
+        console.print(f'[dim]Using credentials file {creds_path} (keys: {", ".join(sorted(creds))})[/dim]')
+    email = args.email or os.getenv('GARMIN_EMAIL') or creds.get('GARMIN_EMAIL') \
+        or console.input('Garmin Connect email: ')
+    password = os.getenv('GARMIN_PASSWORD') or creds.get('GARMIN_PASSWORD') \
+        or getpass.getpass('Garmin Connect password: ')
     home = app.config['FITMON_HOME']
     try:
         try:
@@ -46,7 +77,15 @@ def cmd_login(app, args) -> int:
     except Exception as exc:
         console.print(f'[red]Login failed:[/red] {type(exc).__name__}: {exc}')
         text = str(exc).lower()
-        if isinstance(exc, gc.SyncRateLimited) or '429' in text or 'exhausted' in text:
+        if 'invalid username or password' in text or '401' in text:
+            # Garmin itself rejected the credentials. Don't invite blind retries: a run is several
+            # sign-in attempts, and repeated bad passwords can lock the Garmin account.
+            console.print()
+            console.print(f'Garmin rejected [bold]{email}[/bold] with that password. Before trying again, sign in '
+                          'at connect.garmin.com in a browser to confirm the exact email and password')
+            console.print('(is the account under a different address?). If you pasted the password with Ctrl+V '
+                          'in a classic cmd window, type it or right-click-paste instead.')
+        elif isinstance(exc, gc.SyncRateLimited) or '429' in text or 'exhausted' in text:
             # One `login` is up to five sign-in attempts (the library walks a chain of routes).
             # Retrying straight away only deepens an IP rate limit.
             console.print()
@@ -61,6 +100,9 @@ def cmd_login(app, args) -> int:
     acct.status, acct.connected_at, acct.last_error = 'ok', utcnow(), None
     db.session.commit()
     console.print(f'[green]Connected[/green] Garmin for {user.username}; tokens stored encrypted.')
+    if creds.get('GARMIN_PASSWORD'):
+        console.print(f'[yellow]Delete {creds_path} now[/yellow] - from here on only the encrypted token is '
+                      'used, and a plaintext password should not outlive the one login it was for.')
     return 0
 
 
@@ -135,7 +177,9 @@ def main() -> int:
     sub = parser.add_subparsers(dest='command', required=True)
     login = sub.add_parser('login', help='connect a Garmin account', formatter_class=RichHelpFormatter)
     login.add_argument('-u', '--username', required=True, help='fitmon user')
-    login.add_argument('-e', '--email', help='Garmin email (else $GARMIN_EMAIL or a prompt)')
+    login.add_argument('-e', '--email', help='Garmin email (else $GARMIN_EMAIL, the credentials file, or a prompt)')
+    login.add_argument('-cf', '--credentials', help=f'KEY=VALUE file with GARMIN_EMAIL / GARMIN_PASSWORD '
+                                                    f'(default: {DEFAULT_CREDENTIALS}, used if it exists)')
     run = sub.add_parser('run', help='sync activities (and health)', formatter_class=RichHelpFormatter)
     run.add_argument('-u', '--username', help='only this user (default: every connected user)')
     run.add_argument('-n', '--limit', type=int, help='only the N most recent activities')
