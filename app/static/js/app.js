@@ -171,7 +171,11 @@ const ACT_COLS = [
     {label: 'Distance', sort: 'distance_m', num: 1, get: (r) => fmt.dist(r.distance_m, r.sport)},
     {label: 'Time', sort: 'timer_s', num: 1, get: (r) => fmt.dur(r.timer_s)},
     {label: 'Pace / speed', sort: 'avg_speed', num: 1, get: (r) => fmt.speed(r.avg_speed, r.sport)},
-    {label: 'HR', sort: 'avg_hr', num: 1, get: (r) => r.avg_hr}, {label: 'Power', sort: 'avg_power', num: 1, get: (r) => fmt.num(r.avg_power)},
+    // avg / max together, the way Garmin shows it: the average alone hides whether an activity
+    // was steady or had hard efforts in it.
+    {label: 'HR avg / max', sort: 'avg_hr', num: 1, html: (r) => r.avg_hr
+        ? `${r.avg_hr}<span class="muted"> / ${r.max_hr ?? '–'}</span>` : ''},
+    {label: 'Power', sort: 'avg_power', num: 1, get: (r) => fmt.num(r.avg_power)},
     {label: 'NP', num: 1, get: (r) => fmt.num(r.norm_power)}, {label: 'Climb', sort: 'ascent_m', num: 1, get: (r) => fmt.elev(r.ascent_m)},
     {label: 'TE', sort: 'te_aerobic', num: 1, get: (r) => r.te_aerobic != null ? `${fmt.num(r.te_aerobic, 1)} / ${fmt.num(r.te_anaerobic, 1)}` : ''},
     {label: 'VO2', sort: 'vo2max', num: 1, get: (r) => fmt.num(r.vo2max, 1)},
