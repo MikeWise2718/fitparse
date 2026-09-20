@@ -391,6 +391,10 @@ class DailyHealth(db.Model):
     vo2max_bike = db.Column(db.Float)
     training_status = db.Column(db.String(32))
     readiness = db.Column(db.Integer)
+    # Garmin's own monthly load split, with its aerobic-low / aerobic-high / anaerobic targets.
+    load_aerobic_low = db.Column(db.Float)
+    load_aerobic_high = db.Column(db.Float)
+    load_anaerobic = db.Column(db.Float)
 
 
 # Tables rebuilt by a reindex. Account, job and sync-state tables are not listed on purpose.

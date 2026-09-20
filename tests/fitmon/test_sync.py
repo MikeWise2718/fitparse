@@ -206,5 +206,52 @@ def test_health_extract_tolerates_missing_pieces():
     })
     assert full == {'resting_hr': 48, 'stress_avg': 25, 'bb_max': 95, 'bb_min': 20, 'sleep_s': 27000,
                     'sleep_score': 82, 'hrv_avg': 61, 'hrv_status': 'BALANCED', 'readiness': 71,
-                    'vo2max_run': 51.3, 'vo2max_bike': None}
+                    'vo2max_run': 51.3, 'vo2max_bike': None, 'training_status': None,
+                    'load_aerobic_low': None, 'load_aerobic_high': None, 'load_anaerobic': None}
     assert set(extract({'get_hrv_data': None, 'get_stats': {'averageStressLevel': -1}}).values()) == {None}
+
+
+def test_health_extract_reads_training_status_and_vo2_fallback():
+    """Shapes taken from real responses: values nest under a per-device map, and
+    get_max_metrics is empty on most days so get_training_status supplies VO2 max."""
+    from app.sync.health import extract
+    out = extract({
+        'get_max_metrics': [],
+        'get_training_status': {
+            'mostRecentVO2Max': {'generic': {'vo2MaxPreciseValue': 45.1}, 'cycling': None},
+            'mostRecentTrainingStatus': {'latestTrainingStatusData': {
+                '111': {'trainingStatusFeedbackPhrase': 'RECOVERY_2', 'primaryTrainingDevice': False},
+                '3459362545': {'trainingStatusFeedbackPhrase': 'PRODUCTIVE_1', 'primaryTrainingDevice': True}}},
+            'mostRecentTrainingLoadBalance': {'metricsTrainingLoadBalanceDTOMap': {
+                '3459362545': {'monthlyLoadAerobicLow': 901.7, 'monthlyLoadAerobicHigh': 624.6,
+                               'monthlyLoadAnaerobic': 148.0, 'primaryTrainingDevice': True}}},
+        }})
+    assert out['training_status'] == 'Productive'          # the primary device, not the other one
+    assert out['vo2max_run'] == 45.1 and out['vo2max_bike'] is None
+    assert (out['load_aerobic_low'], out['load_aerobic_high'], out['load_anaerobic']) == (901.7, 624.6, 148.0)
+    empty = extract({})
+    assert empty['training_status'] is None and empty['load_anaerobic'] is None
+
+
+def test_weigh_ins_is_one_range_request_and_converts_grams(app, home, alice):
+    from datetime import date
+    from app.sync.health import weigh_ins
+
+    class FakeClient:
+        def __init__(self):
+            self.calls = []
+
+        def health(self, method, *args):
+            self.calls.append((method, args))
+            return {'dailyWeightSummaries': [
+                {'summaryDate': '2026-09-15', 'latestWeight': {'weight': 72029.0}},
+                {'summaryDate': '2026-09-13', 'latestWeight': {'weight': None}},   # scale synced, no value
+                {'summaryDate': 'not-a-date', 'latestWeight': {'weight': 71000.0}},
+            ]}
+
+    client = FakeClient()
+    days = [date(2026, 9, 16), date(2026, 9, 15), date(2026, 9, 10)]
+    with app.app_context():
+        out = weigh_ins(client, home, days)
+    assert out == {date(2026, 9, 15): 72.03}                       # grams -> kg, bad rows dropped
+    assert client.calls == [('get_weigh_ins', ('2026-09-10', '2026-09-16'))]   # one call for the window
