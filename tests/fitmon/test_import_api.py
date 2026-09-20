@@ -205,3 +205,61 @@ def test_vo2max_series_plots_only_real_recalculations(app, alice, import_file):
     body = alice.get('/api/trends/vo2max').get_json()
     assert len(body['points']) == 3 and body['garmin'] == []
     assert len(alice.get('/api/trends/vo2max?all=1').get_json()['points']) == 4   # incl. the repeat
+
+
+def test_trim_survives_reindex_and_deletes_nothing(app, home, alice, import_file):
+    """A watch left recording after the finish. The trim changes what the figures are computed
+    over; it must not delete samples, and must survive the re-index that recreates sessions."""
+    from app.models import Record, Session, SessionTrim, db
+    res = import_file(alice.user_id, SAMPLE_RUN)
+    act = alice.get('/api/activities').get_json()['activities'][0]
+    sid, before = act['id'], act['timer_s']
+    with app.app_context():
+        n_records = Record.query.count()
+        last_t = db.session.query(db.func.max(Record.t)).scalar()
+
+    cut = int(last_t * 0.6)
+    assert alice.post(f'/api/sessions/{sid}/trim', json={'end_t': cut}).status_code == 200
+    trimmed = alice.get('/api/activities').get_json()['activities'][0]
+    assert trimmed['timer_s'] < before
+    assert trimmed['trimmed_s'] <= cut
+    with app.app_context():
+        assert Record.query.count() < n_records          # only the indexed samples shrink...
+    assert (home / 'users' / str(alice.user_id) / 'fit').exists()
+
+    # a re-index must not silently discard the trim
+    alice.post(f"/api/files/{res['file_id']}/reparse")
+    after = alice.get('/api/activities').get_json()['activities'][0]
+    assert after['timer_s'] == trimmed['timer_s']
+    with app.app_context():
+        assert SessionTrim.query.count() == 1
+
+    # undo restores the full activity
+    sid2 = alice.get('/api/activities').get_json()['activities'][0]['id']
+    assert alice.post(f'/api/sessions/{sid2}/trim', json={'end_t': None}).status_code == 200
+    restored = alice.get('/api/activities').get_json()['activities'][0]
+    assert restored['timer_s'] == before and restored['trimmed_s'] is None
+    with app.app_context():
+        assert Record.query.count() == n_records and SessionTrim.query.count() == 0
+
+
+def test_trim_rejects_nonsense_and_is_scoped(alice, bob, import_file):
+    import_file(alice.user_id, SAMPLE_RUN)
+    sid = alice.get('/api/activities').get_json()['activities'][0]['id']
+    assert alice.post(f'/api/sessions/{sid}/trim', json={'end_t': 5}).status_code == 400
+    assert alice.post(f'/api/sessions/{sid}/trim', json={'end_t': 'soon'}).status_code == 400
+    assert bob.post(f'/api/sessions/{sid}/trim', json={'end_t': 600}).status_code == 404
+    assert bob.get(f'/api/sessions/{sid}/trim/suggest').status_code == 404
+
+
+def test_trim_suggestion_finds_a_stalled_tail():
+    """Not stillness: after a finish you still walk about. Forward progress is what collapses."""
+    from app.services import metrics
+    racing = [{'t': t, 'dist': t * 2.5, 'speed': 2.5, 'hr': 150} for t in range(0, 3600)]
+    # 30 min of milling about: occasional movement, almost no ground covered
+    tail = [{'t': 3600 + t, 'dist': 9000 + (t // 300) * 20, 'speed': 0.3 if t % 120 else 1.2, 'hr': 110}
+            for t in range(0, 1800)]
+    sug = metrics.suggest_trim(racing + tail, 'running')
+    assert sug and abs(sug['end_t'] - 3600) < 400 and sug['dropped_s'] > 1000
+    assert metrics.suggest_trim(racing, 'running') is None          # a clean activity: no suggestion
+    assert metrics.suggest_trim(racing[:100], 'running') is None    # too short to judge

@@ -8,15 +8,15 @@ from sqlalchemy import func
 from .. import auth
 from ..events import event_logger
 from ..models import (BestEffort, Device, FitFile, Lap, Length, RECORD_COLUMNS, Record, Session,
-                      StrengthSet, ZoneTime, db)
-from ..services import importer
+                      SessionTrim, StrengthSet, ZoneTime, db)
+from ..services import importer, metrics
 
 activities_bp = Blueprint('activities', __name__)
 
 LIST_COLUMNS = ['id', 'file_id', 'idx', 'name', 'sport', 'sub_sport', 'start_time', 'timer_s',
                 'elapsed_s', 'distance_m', 'calories', 'avg_hr', 'max_hr', 'avg_speed', 'avg_power',
                 'norm_power', 'ascent_m', 'te_aerobic', 'te_anaerobic', 'vo2max', 'load',
-                'load_model', 'tss', 'trimp', 'has_gps', 'has_power', 'avg_swolf', 'total_sets',
+                'load_model', 'tss', 'trimp', 'has_gps', 'has_power', 'trimmed_s', 'avg_swolf', 'total_sets',
                 'volume_kg']
 SORTABLE = {'start_time', 'distance_m', 'timer_s', 'avg_hr', 'avg_power', 'load', 'vo2max', 'sport',
             'te_aerobic', 'ascent_m', 'avg_speed'}
@@ -163,6 +163,52 @@ def rename_session(session_id):
     sess.name = ((request.get_json(silent=True) or {}).get('name') or '').strip()[:200] or None
     db.session.commit()
     return jsonify({'ok': True, 'name': sess.name})
+
+
+@activities_bp.route('/api/sessions/<int:session_id>/trim', methods=['POST'])
+def trim_session(session_id):
+    """Mark where the activity really ended, when the watch was left recording afterwards.
+
+    No sample is deleted: the trim decides which of them the derived figures are computed over,
+    and is stored per (file, leg) so it survives a re-index. Post {"end_t": null} to undo.
+    """
+    sess = auth.get_owned(Session, session_id)
+    end_t = (request.get_json(silent=True) or {}).get('end_t')
+    existing = db.session.get(SessionTrim, (sess.file_id, sess.idx))
+    if end_t is None:
+        if existing:
+            db.session.delete(existing)
+            db.session.commit()
+    else:
+        try:
+            end_t = int(end_t)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'invalid_end_t'}), 400
+        if end_t < 60:
+            return jsonify({'error': 'invalid_end_t', 'message': 'Keep at least a minute.'}), 400
+        if existing:
+            existing.end_t = end_t
+        else:
+            db.session.add(SessionTrim(file_id=sess.file_id, idx=sess.idx, user_id=g.user.id, end_t=end_t))
+        db.session.commit()
+    event_logger.info('session.trimmed', f'session {sess.id} trim set to {end_t}',
+                      user_id=g.user.id, session_id=sess.id, end_t=end_t)
+    # Re-index the file so every derived figure is recomputed from the trimmed samples.
+    importer.reindex_file(current_app.config['FITMON_HOME'], sess.file)
+    fresh = Session.query.filter_by(file_id=sess.file_id, idx=sess.idx).first()
+    return jsonify({'ok': True, 'session_id': fresh.id if fresh else None})
+
+
+@activities_bp.route('/api/sessions/<int:session_id>/trim/suggest')
+def suggest_session_trim(session_id):
+    sess = auth.get_owned(Session, session_id)
+    rows = (db.session.query(Record.t, Record.dist, Record.speed, Record.hr)
+            .filter(Record.session_id == sess.id).order_by(Record.idx).all())
+    records = [{'t': r[0], 'dist': r[1], 'speed': r[2], 'hr': r[3]} for r in rows]
+    trim = db.session.get(SessionTrim, (sess.file_id, sess.idx))
+    return jsonify({'suggestion': metrics.suggest_trim(records, sess.sport),
+                    'current': trim.end_t if trim else None,
+                    'last_t': records[-1]['t'] if records else None})
 
 
 @activities_bp.route('/api/files/<int:file_id>/reparse', methods=['POST'])

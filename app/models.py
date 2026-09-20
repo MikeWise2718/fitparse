@@ -178,6 +178,7 @@ class Session(db.Model):
     vo2max = db.Column(db.Float)
     # derived at import (services/metrics.py)
     n_records = db.Column(db.Integer, default=0)
+    trimmed_s = db.Column(db.Integer)      # set when a manual trim shortened this leg
     has_gps = db.Column(db.Boolean, default=False)
     has_power = db.Column(db.Boolean, default=False)
     trimp = db.Column(db.Float)
@@ -198,6 +199,21 @@ class Session(db.Model):
     sets = db.relationship('StrengthSet', cascade='all, delete-orphan', order_by='StrengthSet.idx', passive_deletes=True)
     best_efforts = db.relationship('BestEffort', cascade='all, delete-orphan', passive_deletes=True)
     zone_times = db.relationship('ZoneTime', cascade='all, delete-orphan', passive_deletes=True)
+
+
+class SessionTrim(db.Model):
+    """A manual 'the activity really ended here' mark: the watch kept recording afterwards.
+
+    Keyed by (file, leg index) rather than session id, because a re-index deletes and recreates
+    session rows - a trim stored on the session itself would silently vanish. Samples are never
+    deleted; the trim only decides which of them the derived figures are computed over.
+    """
+    __tablename__ = 'session_trims'
+    file_id = db.Column(db.Integer, db.ForeignKey('files.id', ondelete='CASCADE'), primary_key=True)
+    idx = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    end_t = db.Column(db.Integer, nullable=False)     # seconds from the leg start
+    created_at = db.Column(db.DateTime, default=utcnow)
 
 
 class Lap(db.Model):

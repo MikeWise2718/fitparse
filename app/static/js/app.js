@@ -261,6 +261,7 @@ async function loadDetail(id) {
         {label: 'Serial', get: (x) => x.serial}, {label: 'Firmware', get: (x) => x.sw_version}, {label: 'Battery', html: (x) => x.battery_status ? `<span class="tag ${['low', 'critical'].includes(x.battery_status) ? 'bad' : 'good'}">${esc(x.battery_status)}</span> ${x.battery_voltage ? fmt.num(x.battery_voltage, 2) + ' V' : ''}` : ''}],
         d.devices.filter((x) => x.product || x.device_type || x.serial));
     $('det-download').href = `/api/files/${d.file.id}/download`;
+    drawTrim(d);
 
     const dyn = DYNAMICS[s.sport] || [];
     const fields = SERIES.map((x) => x[0]).concat(dyn.map((x) => x[0]), ['dist']);
@@ -305,6 +306,43 @@ function drawSportPanel(d, r, dyn) {
     have.forEach(([k, label]) => { const id = `det-series-dyn-${k}`; $('det-dyn').insertAdjacentHTML('beforeend', `<div class="chart short"><canvas id="${id}"></canvas></div>`);
         chart(id, {type: 'line', data: {labels: r.t.map((t) => fmt.dur(t)), datasets: [{label, data: r[k], borderColor: '#2a9d8f', pointRadius: 0, borderWidth: 1.2, spanGaps: true}]}, options: {plugins: {legend: {position: 'left', labels: {boxWidth: 8}}}, scales: {x: {ticks: {maxTicksLimit: 10}}}}}); });
 }
+async function drawTrim(d) {
+    const panel = $('det-trim-panel'), s = d.session;
+    const info = await api(`/api/sessions/${s.id}/trim/suggest`, {quiet: true});
+    state.trim = info;
+    const sug = info.suggestion;
+    // Only speak up when there is something to say: a live trim, or a credible suggestion.
+    if (!sug && info.current == null && !s.trimmed_s) { panel.style.display = 'none'; return; }
+    panel.style.display = '';
+    let html = '<h2>Recording length</h2>';
+    if (info.current != null) {
+        html += `<div class="banner good">Trimmed to <b>${fmt.dur(info.current)}</b> — figures above are computed to there.
+            The file itself is untouched. <button id="trim-undo">Undo trim</button></div>`;
+    } else if (sug) {
+        html += `<div class="banner">The watch looks like it kept recording after you finished:
+            ${esc(sug.reason)}.<br>Suggested end: <b>${fmt.dur(sug.end_t)}</b> of ${fmt.dur(info.last_t)},
+            dropping the last ${fmt.dur(sug.dropped_s)}.
+            <button class="primary" id="trim-accept">Trim to ${fmt.dur(sug.end_t)}</button></div>`;
+    }
+    html += `<div class="row"><label>End the activity at <input id="trim-manual" type="text" size="8"
+        value="${fmt.dur(info.current ?? sug?.end_t ?? info.last_t)}" placeholder="h:mm:ss"></label>
+        <button id="trim-set">Apply</button>
+        <span class="muted">Nothing is deleted — this only changes what the figures are computed over.</span></div>`;
+    panel.innerHTML = html;
+
+    const apply = async (end_t) => {
+        const r = await api(`/api/sessions/${s.id}/trim`, {method: 'POST', json: {end_t}});
+        if (r._ok) { toast(end_t == null ? 'Trim removed.' : 'Trimmed.'); go('detail', r.session_id || s.id); reload(); }
+    };
+    if ($('trim-accept')) $('trim-accept').addEventListener('click', () => apply(sug.end_t));
+    if ($('trim-undo')) $('trim-undo').addEventListener('click', () => apply(null));
+    $('trim-set').addEventListener('click', () => {
+        const parts = $('trim-manual').value.split(':').map(Number);
+        if (parts.some(isNaN)) { toast('Use h:mm:ss or mm:ss.'); return; }
+        apply(parts.reduce((acc, p) => acc * 60 + p, 0));
+    });
+}
+
 async function drawMap(id, hasGps) {
     $('det-map-panel').style.display = hasGps ? '' : 'none'; if (!hasGps) return;
     const track = await api(`/api/sessions/${id}/track`); state.track = track;
@@ -521,6 +559,8 @@ function wire() {
     let t; $('act-search').addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => loadActivities(true), 250); });
     $('act-transitions').addEventListener('change', () => loadActivities(true)); $('act-more').addEventListener('click', () => { state.act.offset = state.act.rows.length; loadActivities(false); });
     $('det-xaxis').addEventListener('change', drawSeries); $('det-map-color').addEventListener('change', paintTrack);
+    $('det-trim').addEventListener('click', () => { const p = $('det-trim-panel');
+        p.style.display = ''; if (!p.innerHTML) drawTrim(state.session); p.scrollIntoView({behavior: 'smooth'}); });
     $('det-explore').addEventListener('click', () => go('explorer', state.session.file.id));
     $('det-rename').addEventListener('click', async () => { const name = prompt('Activity name', state.session.session.name || ''); if (name != null) { await api(`/api/sessions/${state.session.session.id}/name`, {method: 'POST', json: {name}}); reload(); } });
     $('det-reparse').addEventListener('click', async () => { const d = await api(`/api/files/${state.session.file.id}/reparse`, {method: 'POST'}); toast(`Re-parsed: ${d.parse_status}`); go('activities'); });

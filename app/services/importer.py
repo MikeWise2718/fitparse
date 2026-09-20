@@ -12,7 +12,7 @@ from sqlalchemy import func
 
 from ..events import event_logger
 from ..models import (BestEffort, Device, FitFile, GarminActivity, Lap, Length, ProfileSnapshot,
-                      Record, SCHEMA_VERSION, Session, StrengthSet, ZoneTime, db)
+                      Record, SCHEMA_VERSION, Session, SessionTrim, StrengthSet, ZoneTime, db)
 from ..settings import get_global_settings, get_user_settings, user_dir
 from . import metrics
 from .fit_parser import ParsedFile, parse_fit_file
@@ -95,7 +95,12 @@ def index_parsed(home: Path, file_row: FitFile, parsed: ParsedFile) -> None:
     if file_row.garmin_activity_id:
         garmin = db.session.get(GarminActivity, (user_id, file_row.garmin_activity_id))
 
+    # Manual trims survive a re-index: they are keyed by (file, leg), not by session id.
+    trims = {t.idx: t.end_t for t in SessionTrim.query.filter_by(file_id=file_row.id).all()}
+
     for sess in parsed.sessions:
+        if sess['idx'] in trims:
+            metrics.apply_trim(sess, trims[sess['idx']])
         metrics.compute_session(sess, zones, load_model)
         row = Session(file_id=file_row.id, user_id=user_id, **_clean(sess, Session))
         if garmin and garmin.name and len(parsed.sessions) == 1:

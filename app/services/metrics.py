@@ -10,6 +10,13 @@ POWER_WINDOWS = [5, 15, 30, 60, 300, 600, 1200, 3600]      # seconds
 PACE_DISTANCES = [400, 1000, 1609, 5000, 10000, 21097, 42195]  # metres
 MAX_GAP_S = 10          # smart recording: a sample stands for at most this long
 MAX_PLAUSIBLE_RUN_SPEED = 12.0   # m/s between two samples; sprint world-record pace is ~10.4
+
+# Trim suggestion: how a watch left recording after the finish shows up in the data.
+TRIM_WINDOW_S = 300              # progress is judged over 5-minute windows
+TRIM_STALLED_FRACTION = 0.25     # under a quarter of the activity's own rate = not moving on
+TRIM_MIN_TAIL_S = 300            # never suggest trimming less than 5 minutes
+TRIM_MIN_ACTIVITY_S = 900        # too short to have a meaningful "normal" rate
+TRIM_MIN_MOVING_RATE = 0.5       # m/s; below this there is no progress signal (indoor, pool)
 DEFAULT_MAX_HR = 190
 DEFAULT_REST_HR = 60
 
@@ -164,6 +171,94 @@ def _decoupling(records: list, channel: str) -> tuple:
     overall = _mean([r[channel] for r in usable]) / _mean([r['hr'] for r in usable])
     drift = (ratios[0] - ratios[1]) / ratios[0] * 100 if ratios[0] else None
     return round(overall, 4), round(drift, 2) if drift is not None else None
+
+
+def suggest_trim(records: list, sport: str | None = None) -> dict | None:
+    """Where the activity probably ended, if the watch was left recording afterwards.
+
+    Not stillness: after a race finish you walk about, collect kit, stand talking - speed and
+    cadence stay non-zero. What collapses is FORWARD PROGRESS. In the reference case (a half
+    triathlon) the athlete covered ~500 m per 5 min while racing and under 100 m afterwards.
+
+    Returns {'end_t', 'dropped_s', 'dropped_m', 'reason'} or None. A suggestion only: the caller
+    shows it, the person decides.
+    """
+    usable = [r for r in records if r.get('dist') is not None]
+    if len(usable) < 60:
+        return None
+    total_s = usable[-1]['t'] - usable[0]['t']
+    if total_s < TRIM_MIN_ACTIVITY_S:
+        return None
+
+    def gain(from_t, to_t):
+        window = [r for r in usable if from_t <= r['t'] <= to_t]
+        return (window[-1]['dist'] - window[0]['dist']) if len(window) > 1 else 0.0
+
+    moving_rate = gain(usable[0]['t'], usable[0]['t'] + total_s * 0.8) / max(1, total_s * 0.8)
+    if moving_rate < TRIM_MIN_MOVING_RATE:
+        return None            # never really moving (indoor, swim): no progress signal to use
+
+    # Find the EARLIEST point after which progress never recovers. Walking back from the end and
+    # stopping at the first busy window is wrong: after a finish there are bursts of movement
+    # (collecting kit, walking to the car) that look active in isolation.
+    cutoff = moving_rate * TRIM_STALLED_FRACTION
+    end_t, start_t = usable[-1]['t'], usable[0]['t']
+    # Judge a candidate by the WHOLE remaining tail, not window by window: after a finish there
+    # are bursts (collecting kit, walking to the car) that look active in isolation but leave
+    # the overall rate far below racing. Earliest such point wins.
+    candidate = None
+    t = start_t + TRIM_WINDOW_S
+    while t <= end_t - TRIM_MIN_TAIL_S:
+        if gain(t, end_t) / max(1, end_t - t) <= cutoff:
+            candidate = t
+            break
+        t += TRIM_WINDOW_S
+    if candidate is None:
+        return None
+
+    # Refine backwards to the last sample that was genuinely still progressing.
+    end = candidate
+    for i in range(len(usable) - 1, 0, -1):
+        r, prev = usable[i], usable[i - 1]
+        if r['t'] > candidate:
+            continue
+        if (r['dist'] - prev['dist']) / max(1, r['t'] - prev['t']) > cutoff:
+            end = r['t']
+            break
+    dropped_m = usable[-1]['dist'] - next((r['dist'] for r in usable if r['t'] >= end), usable[-1]['dist'])
+    if end_t - end < TRIM_MIN_TAIL_S:
+        return None
+    return {'end_t': int(end), 'dropped_s': int(end_t - end), 'dropped_m': round(dropped_m),
+            'reason': f'covered {dropped_m:.0f} m in the last {(end_t - end) / 60:.0f} min, '
+                      f'against {moving_rate * 60:.0f} m/min while active'}
+
+
+def apply_trim(sess: dict, end_t: int) -> dict:
+    """Restrict a parsed session to samples up to end_t, and correct the leg's own totals.
+
+    The FIT file is untouched and no row is deleted: this only changes what the derived figures
+    are computed over. Laps are left alone - a lap that straddles the finish is still a lap that
+    happened, and its own totals came from the watch.
+    """
+    kept = [r for r in sess['records'] if r['t'] <= end_t]
+    if not kept or len(kept) == len(sess['records']):
+        return sess
+    first, last = kept[0], kept[-1]
+    sess['records'] = kept
+    sess['trimmed_s'] = int(sess['records'][-1]['t'])
+    # Recompute the summary from the samples: the watch's totals include the dead tail.
+    elapsed = last['t'] - first['t']
+    if elapsed > 0:
+        sess['timer_s'] = float(min(sess.get('timer_s') or elapsed, elapsed))
+        sess['elapsed_s'] = float(elapsed)
+    if first.get('dist') is not None and last.get('dist') is not None:
+        sess['distance_m'] = round(last['dist'] - first['dist'], 2)
+    if sess.get('distance_m') and sess.get('timer_s'):
+        sess['avg_speed'] = round(sess['distance_m'] / sess['timer_s'], 4)
+    hrs = [r['hr'] for r in kept if r.get('hr')]
+    if hrs:
+        sess['avg_hr'], sess['max_hr'] = int(round(sum(hrs) / len(hrs))), max(hrs)
+    return sess
 
 
 def compute_session(sess: dict, zones: dict, load_model: str = 'auto') -> dict:
