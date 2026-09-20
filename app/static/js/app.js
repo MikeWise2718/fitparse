@@ -284,7 +284,16 @@ function drawSportPanel(d, r, dyn) {
 async function drawMap(id, hasGps) {
     $('det-map-panel').style.display = hasGps ? '' : 'none'; if (!hasGps) return;
     const track = await api(`/api/sessions/${id}/track`); state.track = track;
-    if (!state.map) { state.map = L.map('map'); L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '© OpenStreetMap'}).addTo(state.map); }
+    // NOT tile.openstreetmap.org: those are volunteer servers whose usage policy forbids
+    // unidentified apps, and they answer with "Access blocked" tiles. CARTO serves the same
+    // OSM data from a CDN that permits this, and its muted basemap keeps the track readable.
+    if (!state.map) {
+        state.map = L.map('map');
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            maxZoom: 20, subdomains: 'abcd',
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        }).addTo(state.map);
+    }
     paintTrack();
 }
 function paintTrack() {
@@ -306,7 +315,17 @@ async function loadTrends() {
     const [vo2, vol, pc, best, te, swim, strength, body] = await Promise.all([api('/api/trends/vo2max?' + q), api(`/api/trends/volume?bucket=${$('tr-volume-bucket').value}&` + rq),
         api('/api/trends/power-curve?' + sportOnly + rq), api('/api/trends/best-efforts?' + rq), api('/api/trends/training-effect?' + q), api('/api/trends/swim?' + rq), api('/api/trends/strength?' + rq), api('/api/body')]);
     const sports = [...new Set(vo2.points.map((p) => p.sport))], days = [...new Set(vo2.points.map((p) => fmt.day(p.at)))].sort();
-    chart('tr-vo2-chart', {type: 'line', data: {labels: days, datasets: sports.map((sp, i) => scatterLine(fmt.sport(sp), days.map((d) => { const p = vo2.points.filter((x) => x.sport === sp && fmt.day(x.at) === d).pop(); return p ? p.vo2max : null; }), color(sp, i), {spanGaps: true}))}, options: {scales: {x: timeAxis()}}});
+    const vo2Days = [...new Set(days.concat((vo2.garmin || []).map((g) => g.day)))].sort();
+    const vo2Sets = sports.map((sp, i) => scatterLine(fmt.sport(sp) + ' (watch)', vo2Days.map((d) => {
+        const p = vo2.points.filter((x) => x.sport === sp && fmt.day(x.at) === d).pop(); return p ? p.vo2max : null; }), color(sp, i), {spanGaps: true}));
+    // Garmin's own smoothed figure, dashed, for comparison with the per-activity readings.
+    [['run', 'running'], ['bike', 'cycling']].forEach(([key, sp]) => {
+        const pts = (vo2.garmin || []).filter((g) => g[key] != null);
+        if (pts.length) vo2Sets.push(scatterLine(`${fmt.sport(sp)} (Garmin)`, vo2Days.map((d) => {
+            const p = pts.filter((g) => g.day === d).pop(); return p ? p[key] : null; }),
+            color(sp), {spanGaps: true, borderDash: [4, 3], pointRadius: 0}));
+    });
+    chart('tr-vo2-chart', {type: 'line', data: {labels: vo2Days, datasets: vo2Sets}, options: {scales: {x: timeAxis()}}});
     state.trVolume = vol; volumeChart('tr-volume-chart', vol, $('tr-volume-metric').value);
     const windows = pc.all_time.map((p) => p.window);
     chart('tr-power-chart', {type: 'line', data: {labels: windows.map((w) => fmt.window('power', w)), datasets: [scatterLine('all time', pc.all_time.map((p) => p.value), '#7d4cdb'),

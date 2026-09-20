@@ -81,18 +81,52 @@ def volume(user_id: int, bucket: str, start, end, week_start: str = 'monday') ->
                           for b in buckets] for sp in sports}}
 
 
-def vo2max_series(user_id: int, sport: str | None, sub_sport: str | None, start, end) -> list:
+# Garmin only estimates VO2 max for running and (with power) cycling. It nevertheless stamps
+# its current stored value into other activity files, so walks, swims and transitions carry
+# carried-forward numbers that were never measured.
+VO2_REAL_SPORTS = ('running', 'cycling')
+
+
+def vo2max_series(user_id: int, sport: str | None, sub_sport: str | None, start, end,
+                  changes_only: bool = True) -> list:
     q = _sessions(user_id).filter(Session.vo2max.isnot(None))
-    if sport:
-        q = q.filter(Session.sport == sport)
+    q = q.filter(Session.sport == sport) if sport else q.filter(Session.sport.in_(VO2_REAL_SPORTS))
     if sub_sport:
         q = q.filter(Session.sub_sport == sub_sport)
     if start:
         q = q.filter(Session.start_time >= start)
     if end:
         q = q.filter(Session.start_time < end + timedelta(days=1))
-    return [{'id': s.id, 'at': s.start_time, 'sport': s.sport, 'sub_sport': s.sub_sport, 'vo2max': s.vo2max}
-            for s in q.order_by(Session.start_time).all()]
+    rows = q.order_by(Session.start_time).all()
+    out, last = [], {}
+    for s in rows:
+        # An unchanged value means the watch did not recalculate (cycling needs a power meter,
+        # so a flat run of identical readings is one estimate, not many). Plot the changes.
+        if changes_only and last.get(s.sport) == s.vo2max:
+            continue
+        last[s.sport] = s.vo2max
+        out.append({'id': s.id, 'at': s.start_time, 'sport': s.sport, 'sub_sport': s.sub_sport,
+                    'vo2max': s.vo2max})
+    return out
+
+
+def garmin_vo2max_series(user_id: int, start=None, end=None) -> list:
+    """Garmin Connect's own VO2 max, from the health sync - a smoothed figure, distinct from the
+    per-activity value the watch writes into each FIT file."""
+    q = DailyHealth.query.filter(DailyHealth.user_id == user_id,
+                                 db.or_(DailyHealth.vo2max_run.isnot(None),
+                                        DailyHealth.vo2max_bike.isnot(None)))
+    if start:
+        q = q.filter(DailyHealth.day >= start)
+    if end:
+        q = q.filter(DailyHealth.day <= end)
+    out, last = [], None
+    for h in q.order_by(DailyHealth.day).all():
+        if (h.vo2max_run, h.vo2max_bike) == last:
+            continue
+        last = (h.vo2max_run, h.vo2max_bike)
+        out.append({'day': h.day.isoformat(), 'run': h.vo2max_run, 'bike': h.vo2max_bike})
+    return out
 
 
 def best_curve(user_id: int, kind: str, sport: str | None, start=None, end=None) -> list:

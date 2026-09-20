@@ -1,3 +1,4 @@
+from datetime import datetime
 import io
 import zipfile
 
@@ -179,3 +180,28 @@ def test_unhandled_errors_do_not_leak_details(app, alice, monkeypatch):
     body = resp.get_json()
     assert body['error'] == 'internal_error' and 'division' not in resp.get_data(as_text=True)
     assert alice.get('/api/admin/events?prefix=app.').get_json()['events'][-1]['error_id'] == body['error_id']
+
+
+def test_vo2max_series_plots_only_real_recalculations(app, alice, import_file):
+    """Garmin stamps its stored VO2 max into files that never measured one (walks, swims), and
+    repeats the last value when it cannot recalculate (cycling without a power meter)."""
+    from app.models import Session, db
+    from app.services import fitness
+    import_file(alice.user_id, SAMPLE_VO2)
+    with app.app_context():
+        base = Session.query.one()
+        rows = [('cycling', '2026-01-01', 47.0), ('cycling', '2026-01-02', 47.0),   # carried forward
+                ('cycling', '2026-01-03', 46.0), ('walking', '2026-01-04', 46.0),   # never measured
+                ('swimming', '2026-01-05', 46.0), ('running', '2026-01-06', 44.0)]
+        for sport, day, value in rows:
+            db.session.add(Session(file_id=base.file_id, user_id=alice.user_id, sport=sport,
+                                   start_time=datetime.fromisoformat(day + 'T08:00'), vo2max=value))
+        db.session.delete(base)
+        db.session.commit()
+        series = fitness.vo2max_series(alice.user_id, None, None, None, None)
+    plotted = [(p['sport'], p['at'].date().isoformat(), p['vo2max']) for p in series]
+    assert plotted == [('cycling', '2026-01-01', 47.0), ('cycling', '2026-01-03', 46.0),
+                       ('running', '2026-01-06', 44.0)]
+    body = alice.get('/api/trends/vo2max').get_json()
+    assert len(body['points']) == 3 and body['garmin'] == []
+    assert len(alice.get('/api/trends/vo2max?all=1').get_json()['points']) == 4   # incl. the repeat

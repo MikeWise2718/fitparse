@@ -50,8 +50,14 @@ def volume():
 @trends_bp.route('/api/trends/vo2max')
 def vo2max():
     start, end = _range()
-    return jsonify({'points': fitness.vo2max_series(g.user.id, request.args.get('sport'),
-                                                    request.args.get('sub_sport'), start, end)})
+    return jsonify({
+        'points': fitness.vo2max_series(g.user.id, request.args.get('sport'),
+                                        request.args.get('sub_sport'), start, end,
+                                        changes_only=request.args.get('all') != '1'),
+        # Garmin's own smoothed figure, where the health sync has fetched it. It runs about a
+        # point above the per-activity value decoded from the FIT files.
+        'garmin': fitness.garmin_vo2max_series(g.user.id, _day('from'), _day('to')),
+    })
 
 
 @trends_bp.route('/api/trends/power-curve')
