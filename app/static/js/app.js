@@ -180,7 +180,7 @@ async function loadDashboard() {
 // ---------------------------------------------------------------- activities
 const ACT_COLS = [
     {label: 'When', sort: 'start_time', get: (r) => fmt.when(r.start_time, r.utc_offset_s)},
-    {label: 'Sport', sort: 'sport', html: (r) => tag(r.sport, r.sub_sport) + (r.legs > 1 ? ` <span class="muted">leg ${r.idx + 1}/${r.legs}</span>` : '') + (r.parse_status !== 'ok' ? ` <span class="tag ${esc(r.parse_status)}">${esc(r.parse_status)}</span>` : '')},
+    {label: 'Sport', sort: 'sport', html: (r) => tag(r.sport, r.sub_sport) + (r.legs > 1 ? ` <span class="muted">leg ${r.idx + 1}/${r.legs}</span>` : '') + (r.parse_status !== 'ok' ? ` <span class="tag ${esc(r.parse_status)}">${esc(r.parse_status)}</span>` : '') + (r.excluded ? ' <span class="tag" title="Not counted in any analysis">not training</span>' : '')},
     {label: 'Name', get: (r) => r.name || ''},
     {label: 'Distance', sort: 'distance_m', num: 1, get: (r) => fmt.dist(r.distance_m, r.sport)},
     {label: 'Time', sort: 'timer_s', num: 1, get: (r) => fmt.dur(r.timer_s)},
@@ -248,7 +248,8 @@ async function loadActivities(reset) {
     if (reset) { state.act.offset = 0; state.act.rows = []; }
     drawActFilters();
     const q = query({q: $('act-search').value, sort: state.act.sort, dir: state.act.dir, offset: state.act.offset, limit: 100,
-                     hide_transitions: $('act-transitions').checked ? '0' : '1', ...actFilterParams()});
+                     hide_transitions: $('act-transitions').checked ? '0' : '1',
+                     show_excluded: $('act-excluded').checked ? '1' : '0', ...actFilterParams()});
     const data = await api('/api/activities?' + q);
     state.act.rows = state.act.rows.concat(data.activities);
     const nf = activeFilterCount();
@@ -277,7 +278,9 @@ async function loadDetail(id) {
     $('det-when').textContent = `${fmt.when(s.start_time, d.file.utc_offset_s)} · ${d.file.product || d.file.manufacturer || ''} · ${d.file.name || ''}`;
     $('det-legs').innerHTML = d.siblings.length > 1 ? d.siblings.map((x) => `<a data-leg="${x.id}" style="${x.id === s.id ? 'font-weight:700' : ''}">${esc(fmt.sport(x.sport, x.sub_sport))} ${fmt.dur(x.timer_s)}</a>`).join(' · ') : '';
     $('det-legs').querySelectorAll('a').forEach((a) => a.addEventListener('click', () => go('detail', a.dataset.leg)));
-    $('det-banner').innerHTML = d.file.parse_status !== 'ok' ? `<div class="banner">This file could only be read partly: <code>${esc(d.file.parse_error)}</code>. Totals and samples up to that point are shown.</div>` : '';
+    $('det-banner').innerHTML = (d.file.parse_status !== 'ok' ? `<div class="banner">This file could only be read partly: <code>${esc(d.file.parse_error)}</code>. Totals and samples up to that point are shown.</div>` : '')
+        + (s.excluded ? '<div class="banner">Marked <b>not training</b>: kept here in full, but left out of load, volume, trends and records.</div>' : '');
+    $('det-exclude').textContent = s.excluded ? 'Count as training' : 'Not training';
     $('det-tiles').innerHTML = [
         tile('Distance', fmt.dist(s.distance_m, s.sport)), tile('Time', fmt.dur(s.timer_s), s.elapsed_s ? `elapsed ${fmt.dur(s.elapsed_s)}` : ''),
         tile('Pace / speed', fmt.speed(s.avg_speed, s.sport), s.max_speed ? `max ${fmt.speed(s.max_speed, s.sport)}` : ''),
@@ -610,10 +613,16 @@ function wire() {
     $('logout').addEventListener('click', async () => { await api('/api/auth/logout', {method: 'POST'}); location.href = '/login'; });
     $('dash-volume-metric').addEventListener('change', (ev) => volumeChart('dash-volume-chart', state.dashVolume, ev.target.value));
     let t; $('act-search').addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => loadActivities(true), 250); });
-    $('act-transitions').addEventListener('change', () => loadActivities(true)); $('act-more').addEventListener('click', () => { state.act.offset = state.act.rows.length; loadActivities(false); });
+    $('act-transitions').addEventListener('change', () => loadActivities(true));
+    $('act-excluded').addEventListener('change', () => loadActivities(true)); $('act-more').addEventListener('click', () => { state.act.offset = state.act.rows.length; loadActivities(false); });
     $('det-xaxis').addEventListener('change', drawSeries); $('det-map-color').addEventListener('change', paintTrack);
     $('det-trim').addEventListener('click', () => { const p = $('det-trim-panel');
         p.style.display = ''; if (!p.innerHTML) drawTrim(state.session); p.scrollIntoView({behavior: 'smooth'}); });
+    $('det-exclude').addEventListener('click', async () => {
+        const s = state.session.session;
+        const r = await api(`/api/sessions/${s.id}/exclude`, {method: 'POST', json: {excluded: !s.excluded}});
+        if (r._ok) { toast(r.excluded ? 'Left out of analyses.' : 'Counted as training again.'); reload(); }
+    });
     $('det-explore').addEventListener('click', () => go('explorer', state.session.file.id));
     $('det-rename').addEventListener('click', async () => { const name = prompt('Activity name', state.session.session.name || ''); if (name != null) { await api(`/api/sessions/${state.session.session.id}/name`, {method: 'POST', json: {name}}); reload(); } });
     $('det-reparse').addEventListener('click', async () => { const d = await api(`/api/files/${state.session.file.id}/reparse`, {method: 'POST'}); toast(`Re-parsed: ${d.parse_status}`); go('activities'); });

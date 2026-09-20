@@ -8,7 +8,7 @@ from sqlalchemy import func
 from .. import auth
 from ..events import event_logger
 from ..models import (BestEffort, Device, FitFile, Lap, Length, RECORD_COLUMNS, Record, Session,
-                      SessionTrim, StrengthSet, ZoneTime, db)
+                      SessionExclusion, SessionTrim, StrengthSet, ZoneTime, db)
 from ..services import importer, metrics
 
 activities_bp = Blueprint('activities', __name__)
@@ -16,7 +16,7 @@ activities_bp = Blueprint('activities', __name__)
 LIST_COLUMNS = ['id', 'file_id', 'idx', 'name', 'sport', 'sub_sport', 'start_time', 'timer_s',
                 'elapsed_s', 'distance_m', 'calories', 'avg_hr', 'max_hr', 'avg_speed', 'avg_power',
                 'norm_power', 'avg_cadence', 'decoupling', 'ascent_m', 'te_aerobic', 'te_anaerobic', 'vo2max', 'load',
-                'load_model', 'tss', 'trimp', 'has_gps', 'has_power', 'trimmed_s', 'avg_swolf', 'total_sets',
+                'load_model', 'tss', 'trimp', 'has_gps', 'has_power', 'trimmed_s', 'excluded', 'avg_swolf', 'total_sets',
                 'volume_kg']
 SORTABLE = {'start_time', 'distance_m', 'timer_s', 'avg_hr', 'max_hr', 'avg_power', 'norm_power',
             'load', 'vo2max', 'sport', 'te_aerobic', 'te_anaerobic', 'ascent_m', 'avg_speed',
@@ -78,6 +78,8 @@ def list_activities():
                             Session.sub_sport.ilike(like)))
     if request.args.get('hide_transitions', '1') == '1':
         q = q.filter(Session.sport != 'transition')
+    if request.args.get('show_excluded', '0') != '1':
+        q = q.filter(Session.excluded.is_(False))
     sort = request.args.get('sort', 'start_time')
     column = getattr(Session, sort if sort in SORTABLE else 'start_time')
     q = q.order_by(column.asc() if request.args.get('dir') == 'asc' else column.desc())
@@ -181,6 +183,31 @@ def rename_session(session_id):
     sess.name = ((request.get_json(silent=True) or {}).get('name') or '').strip()[:200] or None
     db.session.commit()
     return jsonify({'ok': True, 'name': sess.name})
+
+
+@activities_bp.route('/api/sessions/<int:session_id>/exclude', methods=['POST'])
+def exclude_session(session_id):
+    """Mark an activity as not-training: kept and browsable, but out of every analysis.
+
+    For recordings that are not exercise - GPS tracking on a boat, a car journey the watch
+    caught. Post {"excluded": false} to undo.
+    """
+    sess = auth.get_owned(Session, session_id)
+    data = request.get_json(silent=True) or {}
+    wanted = data.get('excluded', True)
+    existing = db.session.get(SessionExclusion, (sess.file_id, sess.idx))
+    if wanted:
+        if not existing:
+            db.session.add(SessionExclusion(file_id=sess.file_id, idx=sess.idx, user_id=g.user.id,
+                                            reason=(data.get('reason') or '')[:200] or None))
+    elif existing:
+        db.session.delete(existing)
+    sess.excluded = bool(wanted)
+    db.session.commit()
+    event_logger.info('session.excluded' if wanted else 'session.included',
+                      f'session {sess.id} {"excluded from" if wanted else "restored to"} analyses',
+                      user_id=g.user.id, session_id=sess.id)
+    return jsonify({'ok': True, 'excluded': sess.excluded})
 
 
 @activities_bp.route('/api/sessions/<int:session_id>/trim', methods=['POST'])

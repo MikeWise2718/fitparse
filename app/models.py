@@ -179,6 +179,7 @@ class Session(db.Model):
     # derived at import (services/metrics.py)
     n_records = db.Column(db.Integer, default=0)
     trimmed_s = db.Column(db.Integer)      # set when a manual trim shortened this leg
+    excluded = db.Column(db.Boolean, nullable=False, default=False, index=True)
     has_gps = db.Column(db.Boolean, default=False)
     has_power = db.Column(db.Boolean, default=False)
     trimp = db.Column(db.Float)
@@ -213,6 +214,21 @@ class SessionTrim(db.Model):
     idx = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     end_t = db.Column(db.Integer, nullable=False)     # seconds from the leg start
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+
+class SessionExclusion(db.Model):
+    """Marks an activity as "not training": kept, viewable, but out of load, volume and trends.
+
+    For recordings that are not exercise at all - this archive has five days of sailboat GPS
+    tracking (sub_sport `track_me`, 45.6 h) that would otherwise count as 15 % of a year's
+    training volume. Keyed by (file, leg) like SessionTrim, so a re-index cannot lose it.
+    """
+    __tablename__ = 'session_exclusions'
+    file_id = db.Column(db.Integer, db.ForeignKey('files.id', ondelete='CASCADE'), primary_key=True)
+    idx = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    reason = db.Column(db.String(200))
     created_at = db.Column(db.DateTime, default=utcnow)
 
 

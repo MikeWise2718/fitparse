@@ -12,7 +12,10 @@ VO2_SPORTS = {'running': 'run', 'cycling': 'bike'}
 
 
 def _sessions(user_id: int, sports: list | None = None):
-    q = Session.query.filter(Session.user_id == user_id)
+    # Excluded activities never reach an analysis: they are recordings that are not training
+    # (sailboat GPS tracking, and anything else the person has marked). They stay fully
+    # browsable in the activities list, which does NOT use this helper.
+    q = Session.query.filter(Session.user_id == user_id, Session.excluded.is_(False))
     if sports:
         q = q.filter(Session.sport.in_(sports))
     return q
@@ -131,7 +134,8 @@ def garmin_vo2max_series(user_id: int, start=None, end=None) -> list:
 
 def best_curve(user_id: int, kind: str, sport: str | None, start=None, end=None) -> list:
     """Best value per window: highest power, or lowest time for a distance."""
-    q = BestEffort.query.filter(BestEffort.user_id == user_id, BestEffort.kind == kind)
+    q = (BestEffort.query.join(Session, Session.id == BestEffort.session_id)
+         .filter(BestEffort.user_id == user_id, BestEffort.kind == kind, Session.excluded.is_(False)))
     if sport:
         q = q.filter(BestEffort.sport == sport)
     if start:
@@ -150,7 +154,9 @@ def best_curve(user_id: int, kind: str, sport: str | None, start=None, end=None)
 
 def record_progression(user_id: int, kind: str, window: int, sport: str | None) -> list:
     """Every time the all-time best for one window was beaten - the PR log."""
-    q = BestEffort.query.filter_by(user_id=user_id, kind=kind, window=window)
+    q = (BestEffort.query.join(Session, Session.id == BestEffort.session_id)
+         .filter(BestEffort.user_id == user_id, BestEffort.kind == kind,
+                 BestEffort.window == window, Session.excluded.is_(False)))
     if sport:
         q = q.filter(BestEffort.sport == sport)
     out, best = [], None
@@ -187,7 +193,8 @@ def strength_series(user_id: int, start, end) -> dict:
     from ..models import StrengthSet
     q = (db.session.query(Session.start_time, StrengthSet.category, StrengthSet.reps, StrengthSet.weight_kg)
          .join(StrengthSet, StrengthSet.session_id == Session.id)
-         .filter(Session.user_id == user_id, StrengthSet.set_type == 'active'))
+         .filter(Session.user_id == user_id, Session.excluded.is_(False),
+                 StrengthSet.set_type == 'active'))
     if start:
         q = q.filter(Session.start_time >= start)
     if end:

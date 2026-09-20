@@ -302,3 +302,62 @@ def test_max_hr_is_sortable(alice, import_file):
     import_file(alice.user_id, SAMPLE_RUN)
     body = alice.get('/api/activities?sort=max_hr&dir=asc').get_json()
     assert body['total'] == 1
+
+
+def test_excluded_activities_stay_browsable_but_leave_every_analysis(app, alice, import_file):
+    """Sailboat GPS tracking is a real recording but not training: 45.6 h of it would be 15 % of
+    a year's volume. Excluding keeps the activity and its samples, and drops it from analyses."""
+    from app.models import Session, SessionExclusion, db
+    import_file(alice.user_id, SAMPLE_POWER)
+    ride = alice.get('/api/activities').get_json()['activities'][0]
+    with app.app_context():
+        base = Session.query.one()
+        db.session.add(Session(file_id=base.file_id, user_id=alice.user_id, sport='generic',
+                               sub_sport='track_me', start_time=datetime.fromisoformat('2026-08-30T08:00'),
+                               timer_s=49000, distance_m=147000, avg_hr=70, load=40.0, load_model='trimp'))
+        db.session.commit()
+
+    before = alice.get('/api/trends/volume?bucket=year').get_json()
+    assert 'generic' in before['sports']
+    sail = [a for a in alice.get('/api/activities?hide_transitions=0').get_json()['activities']
+            if a['sub_sport'] == 'track_me'][0]
+
+    assert alice.post(f"/api/sessions/{sail['id']}/exclude", json={'reason': 'sailing'}).get_json()['excluded']
+
+    after = alice.get('/api/trends/volume?bucket=year').get_json()
+    assert 'generic' not in after['sports']                      # out of volume
+    assert alice.get('/api/dashboard').get_json()['total_sessions'] == 1
+    listed = alice.get('/api/activities?hide_transitions=0').get_json()
+    assert [a['sub_sport'] for a in listed['activities']] == [ride['sub_sport']]   # hidden by default
+    shown = alice.get('/api/activities?hide_transitions=0&show_excluded=1').get_json()
+    assert any(a['sub_sport'] == 'track_me' and a['excluded'] for a in shown['activities'])
+    assert alice.get(f"/api/sessions/{sail['id']}").status_code == 200             # still viewable
+
+    assert alice.post(f"/api/sessions/{sail['id']}/exclude", json={'excluded': False}).get_json()['excluded'] is False
+    assert 'generic' in alice.get('/api/trends/volume?bucket=year').get_json()['sports']
+
+
+def test_exclusion_survives_a_reindex(app, alice, import_file):
+    """A re-index deletes and recreates session rows, so the exclusion is keyed by
+    (file, leg index) - storing it on the session itself would silently lose it."""
+    from app.models import SessionExclusion
+    res = import_file(alice.user_id, SAMPLE_POWER)
+    sid = alice.get('/api/activities').get_json()['activities'][0]['id']
+    alice.post(f'/api/sessions/{sid}/exclude', json={'excluded': True})
+
+    alice.post(f"/api/files/{res['file_id']}/reparse")
+    with app.app_context():
+        assert SessionExclusion.query.count() == 1
+    fresh = alice.get('/api/activities?show_excluded=1').get_json()['activities'][0]
+    assert fresh['excluded']              # a recreated row, carrying the same decision
+    assert alice.get('/api/activities').get_json()['total'] == 0
+
+
+def test_excluded_sessions_leave_records_and_curves(app, alice, import_file):
+    from app.models import Session, db
+    import_file(alice.user_id, SAMPLE_POWER)
+    assert alice.get('/api/trends/power-curve').get_json()['all_time']
+    sid = alice.get('/api/activities').get_json()['activities'][0]['id']
+    alice.post(f'/api/sessions/{sid}/exclude', json={'excluded': True})
+    assert alice.get('/api/trends/power-curve').get_json()['all_time'] == []
+    assert alice.get('/api/fitness').get_json()['days'] == []
