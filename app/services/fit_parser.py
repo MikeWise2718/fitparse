@@ -26,6 +26,15 @@ PLAUSIBLE_AVG_SPEED = {'running': 8.0, 'walking': 4.0, 'hiking': 4.0, 'swimming'
                        'cycling': 25.0, 'transition': 12.0}
 PLAUSIBLE_AVG_SPEED_DEFAULT = 60.0
 
+# A sample may sit this far past twice the leg's own duration before it is treated as a corrupt
+# timestamp rather than data. Generous: a paused-and-resumed activity legitimately spans far
+# more wall-clock time than its timer.
+STRAY_SAMPLE_SLACK_S = 6 * 3600
+
+# A gap this long between consecutive samples means the tail after it is not part of the
+# activity. Well above any real pause: an hour standing at a finish line still records.
+STRAY_SAMPLE_GAP_S = 4 * 3600
+
 
 class ParseLimitError(Exception):
     pass
@@ -362,8 +371,36 @@ def parse_fit_file(path: str) -> ParsedFile:
     _assign(sets, sessions, 'start_time', 'sets')
     _assign(vo2, sessions, '_ts', '_vo2')
 
+    # Longest leg duration in the file, as the yardstick for a plausible sample time. Derived
+    # from the session summaries, which a corrupt record cannot influence.
+    file_span = max([max((s.get('elapsed_s') or 0), (s.get('timer_s') or 0)) for s in sessions] or [0])
+    file_span = max(file_span, sum((s.get('elapsed_s') or 0) for s in sessions))
+
     for sess in sessions:
         start = sess['start_time']
+        # Watches occasionally emit a record with a corrupt timestamp - seen days after the
+        # activity in this archive. Left in, it stretches the timeline: decoupling compares
+        # halves that are not halves, time-in-zone spans the gap, and per_second() builds a
+        # multi-day grid. The window spans the WHOLE FILE, not this leg: in a multisport file
+        # a short leg's samples legitimately run on to the next leg's start, and the last leg
+        # is open-ended.
+        # Samples may also legitimately PRECEDE the session start: this archive has a race file
+        # whose recording begins 45 min before the first leg's clock.
+        limit = file_span * 2 + STRAY_SAMPLE_SLACK_S
+        kept = [r for r in sess['records']
+                if -limit <= (r['_ts'] - start).total_seconds() <= limit]
+        # Then cut the tail after any implausible gap. In this archive the stray samples sit
+        # hours to days past a huge gap at the leg's end, well inside any absolute window a
+        # long activity needs - the gap itself is the reliable signal, not the offset.
+        for i in range(len(kept) - 1, 0, -1):
+            if (kept[i]['_ts'] - kept[i - 1]['_ts']).total_seconds() > STRAY_SAMPLE_GAP_S:
+                kept = kept[:i]
+                break
+        if len(kept) != len(sess['records']):
+            out.status = 'partial' if out.status == 'ok' else out.status
+            out.error = out.error or (f"dropped {len(sess['records']) - len(kept)} sample(s) timestamped "
+                                      f"outside the {sess['sport']} leg")
+            sess['records'] = kept
         for i, rec in enumerate(sess['records']):
             rec['idx'] = i
             rec['t'] = int((rec.pop('_ts') - start).total_seconds())

@@ -176,3 +176,57 @@ def test_running_power_is_never_scored_against_cycling_ftp():
     assert sess.get('tss') is None and sess['load_model'] == 'trimp' and sess['load'] < 150
     assert not [z for z in sess['_zones'] if z['kind'] == 'power']
     assert any(b['kind'] == 'power' for b in sess['_best'])     # still gets its own (running) power curve
+
+
+def test_stray_timestamps_are_dropped(tmp_path, monkeypatch):
+    """Seen in the archive: a watch emitted one record dated ten days after a 31-minute run.
+    Left in, it stretches the timeline that decoupling and time-in-zone are computed over."""
+    from datetime import timedelta
+    from app.services import fit_parser
+
+    real = fit_parser.parse_fit_file(SAMPLE_RUN)
+    sess = real.sessions[0]
+    start, n = sess['start_time'], len(sess['records'])
+
+    captured = {}
+    original = fit_parser._record_row
+
+    def inject(v):
+        row = original(v)
+        captured.setdefault('n', 0)
+        captured['n'] += 1
+        if captured['n'] == 5:                       # one corrupt sample, mid-file
+            row['_ts'] = start + timedelta(days=10)
+        return row
+
+    monkeypatch.setattr(fit_parser, '_record_row', inject)
+    parsed = fit_parser.parse_fit_file(SAMPLE_RUN)
+    kept = parsed.sessions[0]['records']
+    assert len(kept) == n - 1
+    assert parsed.status == 'partial' and 'outside' in parsed.error
+    span = kept[-1]['t'] - kept[0]['t']
+    assert span < (sess['timer_s'] or 0) * 2 + fit_parser.STRAY_SAMPLE_SLACK_S
+
+
+def test_tail_after_a_multi_hour_gap_is_cut(tmp_path, monkeypatch):
+    """The real pattern in this archive: a few samples sit hours to days past a huge gap at the
+    leg's end - inside any absolute window a long activity needs, so the gap is the signal."""
+    from datetime import timedelta
+    from app.services import fit_parser
+
+    n_real = len(fit_parser.parse_fit_file(SAMPLE_RUN).sessions[0]['records'])
+    seen = {'n': 0}
+    original = fit_parser._record_row
+
+    def shift_tail(v):
+        row = original(v)
+        seen['n'] += 1
+        if seen['n'] > n_real - 3:                    # last three samples, two days later
+            row['_ts'] = row['_ts'] + timedelta(days=2)
+        return row
+
+    monkeypatch.setattr(fit_parser, '_record_row', shift_tail)
+    parsed = fit_parser.parse_fit_file(SAMPLE_RUN)
+    kept = parsed.sessions[0]['records']
+    assert len(kept) == n_real - 3 and parsed.status == 'partial'
+    assert max(k['t'] for k in kept) < 2 * 86400
