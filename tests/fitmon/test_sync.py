@@ -255,3 +255,23 @@ def test_weigh_ins_is_one_range_request_and_converts_grams(app, home, alice):
         out = weigh_ins(client, home, days)
     assert out == {date(2026, 9, 15): 72.03}                       # grams -> kg, bad rows dropped
     assert client.calls == [('get_weigh_ins', ('2026-09-10', '2026-09-16'))]   # one call for the window
+
+
+def test_disconnect_removes_only_the_token(app, home, alice):
+    """Moving an instance leaves two hosts able to sync one account, and Garmin rate-limits by
+    network. Disconnecting must drop the credential without touching any data."""
+    from app.models import GarminAccount, db
+    from app.sync import cli, client as gc
+    gc.save_tokens(home, alice.user_id, '{"di_token": "t"}')
+    with app.app_context():
+        db.session.add(GarminAccount(user_id=alice.user_id, status='ok'))
+        db.session.commit()
+    args = type('Args', (), {'username': 'alice'})()
+    with app.app_context():
+        assert cli.cmd_disconnect(app, args) == 0
+        assert not gc.has_tokens(home, alice.user_id)
+        assert db.session.get(GarminAccount, alice.user_id).status == 'disconnected'
+        assert cli.cmd_disconnect(app, args) == 0        # idempotent
+    args_missing = type('Args', (), {'username': 'nobody'})()
+    with app.app_context():
+        assert cli.cmd_disconnect(app, args_missing) == 1

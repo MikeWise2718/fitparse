@@ -151,6 +151,29 @@ def cmd_run(app, args) -> int:
     return code
 
 
+def cmd_disconnect(app, args) -> int:
+    """Remove the stored Garmin token. Nothing else is touched - activities, health data and
+    the resume state all stay. Needed when an instance is moved or duplicated: two hosts
+    syncing one account doubles the request rate, and Garmin rate-limits by network."""
+    from . import activities, client as gc
+    from ..models import db
+    user = _user(args.username)
+    if not user:
+        console.print(f'[red]No such user:[/red] {args.username}')
+        return 1
+    home = app.config['FITMON_HOME']
+    if not gc.has_tokens(home, user.id):
+        console.print(f'{user.username} is not connected to Garmin.')
+        return 0
+    gc.delete_tokens(home, user.id)
+    acct = activities.account(user.id)
+    acct.status = 'disconnected'
+    db.session.commit()
+    console.print(f'[green]Disconnected[/green] Garmin for {user.username}; token deleted. '
+                  'Activities and health data are untouched.')
+    return 0
+
+
 def cmd_status(app, args) -> int:
     from . import client as gc
     from ..models import GarminAccount, GarminActivity, User, db
@@ -189,13 +212,17 @@ def main() -> int:
     run.add_argument('-q', '--queue', action='store_true', help='enqueue for the job worker instead of running here')
     run.add_argument('-y', '--dry-run', action='store_true', help='show who would be synced, then stop')
     run.add_argument('-v', '--verbose', action='store_true')
+    disconnect = sub.add_parser('disconnect', help='remove the stored Garmin token',
+                                formatter_class=RichHelpFormatter)
+    disconnect.add_argument('-u', '--username', required=True, help='fitmon user')
     sub.add_parser('status', help='auth state and counts per user', formatter_class=RichHelpFormatter)
     args = parser.parse_args()
 
     from .. import create_app
     app = create_app()
     with app.app_context():
-        return {'login': cmd_login, 'run': cmd_run, 'status': cmd_status}[args.command](app, args)
+        return {'login': cmd_login, 'run': cmd_run, 'status': cmd_status,
+                'disconnect': cmd_disconnect}[args.command](app, args)
 
 
 if __name__ == '__main__':
