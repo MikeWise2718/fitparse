@@ -5,8 +5,15 @@
 set -euo pipefail
 SRC=~/fitmon
 DEST=~/snorlax-homes/mike/backups/fitmon      # SMB mount under $HOME, not /Volumes (see fleet notes)
+# The SMB mount drops silently - it was found unmounted for seven weeks in Sept 2026, with
+# nothing noticing. homeseg owns the mount tooling; reuse it rather than duplicating the
+# credentials handling, and only then give up.
+if [ ! -d ~/snorlax-homes/mike ] && [ -x ~/scripts/snorlax-mount-retry.sh ]; then
+    echo "snorlax not mounted - attempting mount via homeseg's script" >&2
+    ~/scripts/snorlax-mount-retry.sh || true
+fi
 if [ ! -d ~/snorlax-homes/mike ]; then
-    echo "snorlax share is not mounted at ~/snorlax-homes - skipping backup" >&2
+    echo "snorlax share is not mounted at ~/snorlax-homes and could not be mounted - no backup taken" >&2
     exit 1
 fi
 mkdir -p "$DEST/db" "$DEST/users"

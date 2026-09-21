@@ -4,8 +4,7 @@ Follows the fleet guide (`D:\hw\pokeflute\docs\deploying-a-new-munchlax-service.
 only records what is specific to fitmon. Port **8640** is reserved in pokeflute's `ports.json`.
 
 Status: **deployed 2026-09-21.** Live at **https://munchlax.taild34695.ts.net:8640** (tailnet
-only). Web, worker and the nightly sync run as system LaunchDaemons; the backup timer is not
-installed because snorlax is not mounted on munchlax (see *What runs*).
+only). All four units run as system LaunchDaemons: web, worker, nightly sync, nightly backup.
 
 ## What runs
 
@@ -14,7 +13,7 @@ installed because snorlax is not mounted on munchlax (see *What runs*).
 | `com.fitmon.web` | `deploy/run-fitmon-web.sh` → `fitmon-web` (Flask, reloader on, **debugger off**) | no — the reloader picks up `git pull` |
 | `com.fitmon.worker` | `deploy/run-fitmon-worker.sh` → `fitmon-worker` | **yes**, when parsing / import / sync code changed |
 | `com.fitmon.sync` (04:10) | `deploy/run-fitmon-sync.sh` → `fitmon-sync run --queue --health` | – |
-| `com.fitmon.backup` (04:50) | `deploy/run-fitmon-backup.sh` → snapshot + rsync to snorlax | **not installed**: needs snorlax mounted at `~/snorlax-homes` on munchlax, which it is not |
+| `com.fitmon.backup` (04:50) | `deploy/run-fitmon-backup.sh` → snapshot + rsync to snorlax | – |
 
 Code: `~/projects/fitparse/`. Runtime data: `~/fitmon/` (db, FIT originals, logs, keys, per-user
 settings, encrypted Garmin tokens). Optional overrides: `~/.fitmon/env`. Logs of the launchd
@@ -77,6 +76,21 @@ pokeflute's probe reaches `/api/ping`.
 
 **Still to verify (spec task 5.3):** that a guest who reaches munchlax through a Tailscale *node
 share* can open the `tailscale serve` HTTPS name. Do this with one real guest before inviting anyone.
+
+## The snorlax mount, for backups
+
+`~/snorlax-homes` is the fleet's SMB mount point on munchlax and **homeseg owns the tooling**:
+`~/scripts/snorlax-mount-retry.sh` (credentials in `~/.snorlax-smb-password`, log in
+`~/homeseg/logs/snorlax-mount.log`), plus `com.mike.snorlax-mount` to mount it at boot.
+
+**The mount drops silently.** In September 2026 it was found unmounted since 4 August — seven
+weeks — with nothing noticing. So the backup script calls that same retry script when the mount
+is missing, rather than duplicating the credential handling, and only gives up if that fails.
+Verified by unmounting and running the backup: it remounted and completed.
+
+Check it: `ssh munchlax 'mount | grep snorlax'`, and the backups themselves at
+`~/snorlax-homes/mike/backups/fitmon/` — seven rotating DB snapshots plus an rsync of the FIT
+originals. Garmin tokens are excluded by design.
 
 ## Moving an existing instance to another host
 
