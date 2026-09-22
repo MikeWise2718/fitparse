@@ -71,8 +71,24 @@ password) means it works, a **400** means the app still thinks it is plain HTTP.
 
 Then in the app: **Admin → Server → Public base URL** = that `https://…ts.net:8640` address, so
 invite links point at it. Auth cookies are always `Secure`: signing in over `http://munchlax:8640`
-deliberately does not stick (the login page says so). The LAN port stays open only so
-pokeflute's probe reaches `/api/ping`.
+deliberately does not stick (the login page says so).
+
+**Both the card link and the health probe must name the HTTPS address** — this is the one
+port on munchlax where `tailscale serve` shadows the app's own port number, so `munchlax:8640`
+means plain HTTP on the LAN and HTTPS on the tailnet. `munchlax` resolves to the Tailscale
+address first, so a probe of `http://munchlax:8640/api/ping` talks HTTP to the HTTPS listener
+and gets `HTTP 400` ("Client sent an HTTP request to an HTTPS server"), which the landing page
+reported as DOWN while the app was perfectly healthy. `deploy/pokeflute-service.json` therefore
+pins both:
+
+```json
+"health_url":    "https://munchlax.taild34695.ts.net:8640/api/ping",
+"url_tailscale": "https://munchlax.taild34695.ts.net:8640"
+```
+
+Without `url_tailscale`, landing and pokeflute derive the tailnet link by swapping the host into
+`url` and keep its `http://`, producing a link that cannot load. Support for that field is
+landing >= 0.10.1 and pokeflute >= 0.25.2.
 
 **Still to verify (spec task 5.3):** that a guest who reaches munchlax through a Tailscale *node
 share* can open the `tailscale serve` HTTPS name. Do this with one real guest before inviting anyone.
