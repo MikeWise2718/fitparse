@@ -4,8 +4,9 @@
   "title": "Fitmon",
   "description": "Fitness monitoring from Garmin FIT files",
   "url": "http://munchlax:8640",
-  "health_url": "https://munchlax.taild34695.ts.net:8640/api/ping",
+  "health_url": "https://munchlax.taild34695.ts.net:8641/api/ping",
   "probe_insecure": false,
   "order": 60,
-  "url_tailscale": "https://munchlax.taild34695.ts.net:8640"
+  "url_tailscale": "https://munchlax.taild34695.ts.net:8641",
+  "category": "Apps"
 }

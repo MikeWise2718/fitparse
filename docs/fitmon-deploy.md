@@ -1,10 +1,11 @@
 # Deploying fitmon to munchlax
 
 Follows the fleet guide (`D:\hw\pokeflute\docs\deploying-a-new-munchlax-service.md`); this file
-only records what is specific to fitmon. Port **8640** is reserved in pokeflute's `ports.json`.
+only records what is specific to fitmon. Two ports are reserved in pokeflute's `ports.json`:
+**8640** for the app and **8641** for its HTTPS front (`fitmon-https`).
 
-Status: **deployed 2026-09-21.** Live at **https://munchlax.taild34695.ts.net:8640** (tailnet
-only). All four units run as system LaunchDaemons: web, worker, nightly sync, nightly backup.
+Status: **deployed 2026-09-21.** Live at **https://munchlax.taild34695.ts.net:8641** (tailnet
+only; it was `:8640` until 2026-09-23 — see "HTTPS front door" for why it moved). All four units run as system LaunchDaemons: web, worker, nightly sync, nightly backup.
 
 ## What runs
 
@@ -59,32 +60,42 @@ no sudo:
 
 ```bash
 ssh -t munchlax
-/Applications/Tailscale.app/Contents/MacOS/Tailscale serve --bg --https 8640 8640
+/Applications/Tailscale.app/Contents/MacOS/Tailscale serve --bg --https 8641 8640
 /Applications/Tailscale.app/Contents/MacOS/Tailscale serve status
 ```
 
 **Use an explicit HTTPS port, not the root path.** munchlax already serves klefki on `/` and
-ytsum on `:8443`; taking the root would have broken klefki. Fitmon uses `:8640` to match its own
-port. `ProxyFix` reads Tailscale's `X-Forwarded-Proto`, so the app knows the connection is
-secure — verify by POSTing to `/api/auth/login` through the HTTPS name: a **401** (wrong
-password) means it works, a **400** means the app still thinks it is plain HTTP.
+ytsum on `:8443`; taking the root would have broken klefki. `ProxyFix` reads Tailscale's
+`X-Forwarded-Proto`, so the app knows the connection is secure — verify by POSTing to
+`/api/auth/login` through the HTTPS name: a **401** (wrong password) means it works, a **400**
+means the app still thinks it is plain HTTP.
 
-Then in the app: **Admin → Server → Public base URL** = that `https://…ts.net:8640` address, so
+**The front must never share the app's port number.** It used to: `serve --https 8640 8640`,
+chosen "to match its own port". That only works if fitmon binds its wildcard address *before*
+Tailscale binds the tailnet ones — macOS allows specific-after-wildcard, not the reverse. For
+50 days of uptime fitmon happened to win; the 2026-09-23 reboot started Tailscale first, and
+fitmon's web daemon crash-looped on `Address already in use` until the front was moved. The
+same sharing had already caused a false DOWN on the landing page (a plain-HTTP probe of
+`munchlax:8640` reaching the HTTPS listener). ytsum is the pattern: front `:8443`, app `:5010`.
+
+To recover if this ever recurs: `serve --https=8640 off`, wait for the web daemon's KeepAlive
+to bind 8640 (seconds), then add the front back on 8641.
+
+Then in the app: **Admin → Server → Public base URL** = that `https://…ts.net:8641` address, so
 invite links point at it. Auth cookies are always `Secure`: signing in over `http://munchlax:8640`
 deliberately does not stick (the login page says so).
 
-**Both the card link and the health probe must name the HTTPS address** — this is the one
-port on munchlax where `tailscale serve` shadows the app's own port number, so `munchlax:8640`
-means plain HTTP on the LAN and HTTPS on the tailnet. `munchlax` resolves to the Tailscale
-address first, so a probe of `http://munchlax:8640/api/ping` talks HTTP to the HTTPS listener
-and gets `HTTP 400` ("Client sent an HTTP request to an HTTPS server"), which the landing page
-reported as DOWN while the app was perfectly healthy. `deploy/pokeflute-service.json` therefore
-pins both:
+**Both the card link and the health probe name the HTTPS address**, so they test the door
+people actually use. `deploy/pokeflute-service.json` pins both:
 
 ```json
-"health_url":    "https://munchlax.taild34695.ts.net:8640/api/ping",
-"url_tailscale": "https://munchlax.taild34695.ts.net:8640"
+"health_url":    "https://munchlax.taild34695.ts.net:8641/api/ping",
+"url_tailscale": "https://munchlax.taild34695.ts.net:8641"
 ```
+
+It also carries `"category": "Apps"` for the landing page. `deploy.sh` copies this file over
+the live registry entry, so a category set by hand on munchlax is lost on the next deploy — it
+has to live here.
 
 Without `url_tailscale`, landing and pokeflute derive the tailnet link by swapping the host into
 `url` and keep its `http://`, producing a link that cannot load. Support for that field is
