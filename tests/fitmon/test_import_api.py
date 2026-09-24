@@ -408,7 +408,7 @@ def test_vo2_carried_detection_rules(app, alice, import_file):
 
 def test_running_economy_is_metres_per_beat_outdoor_only_in_the_average(app, alice, import_file):
     """Crude on purpose: speed x 60 / HR from the summary. Treadmill runs are plotted but kept
-    out of the rolling average; too-short, too-long and excluded runs are left out entirely."""
+    out of the rolling average; too-short, too-long, excluded and triathlon run legs are left out entirely."""
     from app.models import Session, db
     import_file(alice.user_id, SAMPLE_RUN)
     with app.app_context():
@@ -426,6 +426,13 @@ def test_running_economy_is_metres_per_beat_outdoor_only_in_the_average(app, ali
                                    start_time=datetime.fromisoformat(day + 'T08:00'), timer_s=mins * 60,
                                    avg_speed=speed, avg_hr=hr, has_gps=gps, vo2max=vo2,
                                    vo2max_carried=carried, excluded=excluded))
+        # A triathlon run leg: a swim and a bike in the same file, and a duration that passes the cap.
+        import_file(alice.user_id, SAMPLE_POWER)
+        race = Session.query.filter(Session.file_id != base.file_id).first().file_id
+        for sport, minutes in (('swimming', 30), ('cycling', 70), ('running', 60)):
+            db.session.add(Session(file_id=race, user_id=alice.user_id, sport=sport, sub_sport='generic',
+                                   start_time=datetime.fromisoformat('2026-06-07T08:00'), timer_s=minutes * 60,
+                                   avg_speed=2.2, avg_hr=150, has_gps=True))
         db.session.delete(base)
         db.session.commit()
 

@@ -4,6 +4,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 
 from sqlalchemy import func
+from sqlalchemy.orm import aliased
 
 from ..models import BestEffort, DailyHealth, Device, ProfileSnapshot, Session, db
 
@@ -188,10 +189,18 @@ def running_economy_series(user_id: int, start, end) -> dict:
     only estimates. Outdoor runs carry the trend line; treadmill runs are returned but flagged,
     because their speed comes from the wrist accelerometer unless the treadmill was calibrated.
     The per-run VO2 max the watch recalculated rides along, so the two can be compared.
+
+    Run legs of a multisport recording are left out: after a swim and a bike they measure how
+    drained you were, not how economical you are. The duration cap alone does not catch them -
+    an Olympic-distance run leg fits inside it.
     """
+    other = aliased(Session)
+    after_swim_or_bike = (db.session.query(other.id)
+                          .filter(other.file_id == Session.file_id, other.sport.in_(('swimming', 'cycling')))
+                          .exists())
     q = (_sessions(user_id, ['running'])
          .filter(Session.avg_speed > 0, Session.avg_hr > 0,
-                 Session.timer_s.between(ECONOMY_MIN_S, ECONOMY_MAX_S)))
+                 Session.timer_s.between(ECONOMY_MIN_S, ECONOMY_MAX_S), ~after_swim_or_bike))
     if start:
         q = q.filter(Session.start_time >= start)
     if end:
