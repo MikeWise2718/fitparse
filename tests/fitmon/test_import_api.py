@@ -404,3 +404,37 @@ def test_vo2_carried_detection_rules(app, alice, import_file):
         assert not _vo2_is_carried(alice.user_id, {'sport': 'running', 'vo2max': prev.vo2max + 1, 'has_power': False}, at)
         # no value at all is not "carried"
         assert not _vo2_is_carried(alice.user_id, {'sport': 'running', 'vo2max': None, 'has_power': False}, at)
+
+
+def test_running_economy_is_metres_per_beat_outdoor_only_in_the_average(app, alice, import_file):
+    """Crude on purpose: speed x 60 / HR from the summary. Treadmill runs are plotted but kept
+    out of the rolling average; too-short, too-long and excluded runs are left out entirely."""
+    from app.models import Session, db
+    import_file(alice.user_id, SAMPLE_RUN)
+    with app.app_context():
+        base = Session.query.one()
+        rows = [  # day, sub_sport, gps, minutes, speed m/s, hr, vo2, carried, excluded
+            ('2026-06-01', 'generic', True, 50, 2.60, 141, 47.3, False, False),
+            ('2026-06-02', 'treadmill', False, 45, 2.50, 126, None, False, False),
+            ('2026-06-03', 'generic', True, 55, 2.57, 141, 43.8, False, False),
+            ('2026-06-04', 'generic', True, 10, 3.00, 150, None, False, False),    # too short
+            ('2026-06-05', 'generic', True, 223, 1.60, 129, 47.3, True, False),    # a race leg
+            ('2026-06-06', 'generic', True, 50, 2.80, 140, None, False, True),     # excluded
+        ]
+        for day, sub, gps, mins, speed, hr, vo2, carried, excluded in rows:
+            db.session.add(Session(file_id=base.file_id, user_id=alice.user_id, sport='running', sub_sport=sub,
+                                   start_time=datetime.fromisoformat(day + 'T08:00'), timer_s=mins * 60,
+                                   avg_speed=speed, avg_hr=hr, has_gps=gps, vo2max=vo2,
+                                   vo2max_carried=carried, excluded=excluded))
+        db.session.delete(base)
+        db.session.commit()
+
+    body = alice.get('/api/trends/economy').get_json()
+    pts = body['points']
+    assert [p['at'][:10] for p in pts] == ['2026-06-01', '2026-06-02', '2026-06-03']
+    assert [p['m_per_beat'] for p in pts] == [round(2.60 * 60 / 141, 3), round(2.50 * 60 / 126, 3), round(2.57 * 60 / 141, 3)]
+    assert [p['treadmill'] for p in pts] == [False, True, False]
+    assert pts[1]['rolling'] is None                                   # treadmill: not in the average
+    assert pts[2]['rolling'] == round((pts[0]['m_per_beat'] + pts[2]['m_per_beat']) / 2, 3)
+    assert [p['vo2max'] for p in pts] == [47.3, None, 43.8]
+    assert pts[0]['pace_s_per_km'] == round(1000 / 2.60)

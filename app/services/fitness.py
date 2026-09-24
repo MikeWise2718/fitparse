@@ -174,6 +174,45 @@ def efficiency_series(user_id: int, sport: str, start, end) -> list:
             for s in q.order_by(Session.start_time).all()]
 
 
+# Runs short enough to be warm-up dominated, or long enough to be races or run-walks, say more
+# about the session than about the runner.
+ECONOMY_MIN_S, ECONOMY_MAX_S = 20 * 60, 100 * 60
+ECONOMY_ROLLING = 5
+
+
+def running_economy_series(user_id: int, start, end) -> dict:
+    """Metres per heart beat for each run: average speed x 60 / average HR.
+
+    Deliberately crude and from the session summary, so it is the number a person can check
+    by hand. Unlike `efficiency_series` it never switches to running power, which the watch
+    only estimates. Outdoor runs carry the trend line; treadmill runs are returned but flagged,
+    because their speed comes from the wrist accelerometer unless the treadmill was calibrated.
+    The per-run VO2 max the watch recalculated rides along, so the two can be compared.
+    """
+    q = (_sessions(user_id, ['running'])
+         .filter(Session.avg_speed > 0, Session.avg_hr > 0,
+                 Session.timer_s.between(ECONOMY_MIN_S, ECONOMY_MAX_S)))
+    if start:
+        q = q.filter(Session.start_time >= start)
+    if end:
+        q = q.filter(Session.start_time < end + timedelta(days=1))
+    points, outdoor = [], []
+    for s in q.order_by(Session.start_time).all():
+        treadmill = s.sub_sport == 'treadmill' or not s.has_gps
+        point = {'id': s.id, 'at': s.start_time, 'treadmill': treadmill,
+                 'm_per_beat': round(s.avg_speed * 60 / s.avg_hr, 3),
+                 'pace_s_per_km': round(1000 / s.avg_speed), 'avg_hr': s.avg_hr,
+                 'minutes': round(s.timer_s / 60),
+                 'vo2max': None if s.vo2max_carried else s.vo2max, 'rolling': None}
+        if not treadmill:
+            outdoor.append(point['m_per_beat'])
+            window = outdoor[-ECONOMY_ROLLING:]
+            point['rolling'] = round(sum(window) / len(window), 3)
+        points.append(point)
+    return {'points': points, 'rolling_runs': ECONOMY_ROLLING,
+            'minutes': [ECONOMY_MIN_S // 60, ECONOMY_MAX_S // 60]}
+
+
 def swim_series(user_id: int, start, end) -> list:
     q = _sessions(user_id, ['swimming']).filter(Session.distance_m > 0, Session.timer_s > 0)
     if start:

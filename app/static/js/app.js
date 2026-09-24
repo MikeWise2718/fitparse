@@ -493,7 +493,7 @@ async function loadTrends() {
     table('tr-best-table', [{label: 'Distance', get: (b) => fmt.window('pace', b.window)}, {label: 'Best ever', num: 1, get: (b) => fmt.dur(b.value)}, {label: 'Pace', num: 1, get: (b) => fmt.speed(b.window / b.value, 'running')}, {label: 'On', get: (b) => fmt.day(b.at)},
         {label: 'In range', num: 1, get: (b) => { const r = best.range.find((x) => x.window === b.window); return r ? fmt.dur(r.value) : ''; }}], best.all_time, (b) => go('detail', b.session_id));
     const prSel = $('tr-pr-kind'); if (!prSel.options.length) prSel.innerHTML = [['power', 1200], ['power', 300], ['power', 60], ['pace', 5000], ['pace', 10000], ['pace', 1000]].map(([k, w]) => `<option value="${k}:${w}">${k === 'power' ? 'power ' : 'run '}${fmt.window(k, w)}</option>`).join('');
-    loadRecordProgression(); loadEfficiency();
+    loadRecordProgression(); loadEfficiency(); loadEconomy();
     chart('tr-te-chart', {type: 'scatter', data: {datasets: [...new Set(te.points.map((p) => p.sport))].map((sp, i) => ({label: fmt.sport(sp), backgroundColor: color(sp, i), data: te.points.filter((p) => p.sport === sp).map((p) => ({x: p.aerobic, y: p.anaerobic || 0}))}))},
         options: {interaction: {mode: 'nearest'}, scales: {x: {min: 0, max: 5, title: {display: true, text: 'aerobic'}}, y: {min: 0, max: 5, title: {display: true, text: 'anaerobic'}}}}});
     chart('tr-swim-chart', {type: 'line', data: {labels: swim.points.map((p) => fmt.day(p.at)), datasets: [scatterLine('s / 100 m', swim.points.map((p) => p.pace_100m_s), '#17a2b8'), scatterLine('SWOLF', swim.points.map((p) => p.swolf), '#e4572e', {yAxisID: 'y1', spanGaps: true})]},
@@ -512,6 +512,19 @@ async function loadRecordProgression() { const [kind, w] = $('tr-pr-kind').value
 async function loadEfficiency() { const d = await api(`/api/trends/efficiency?sport=${$('tr-eff-sport').value}&` + range());
     chart('tr-eff-chart', {type: 'line', data: {labels: d.points.map((p) => fmt.day(p.at)), datasets: [scatterLine('efficiency', d.points.map((p) => p.efficiency), '#0b6bcb'), scatterLine('decoupling %', d.points.map((p) => p.decoupling), '#e4572e', {yAxisID: 'y1', showLine: false})]},
         options: {scales: {x: timeAxis(), y1: {position: 'right', grid: {drawOnChartArea: false}}}}}); }
+async function loadEconomy() {
+    const d = await api('/api/trends/economy?' + range()), pts = d.points, ft = statute();
+    const per = (v) => (v == null ? null : ft ? +(v * 3.28084).toFixed(2) : v), unit = ft ? 'ft/beat' : 'm/beat';
+    const pace = (p) => (ft ? `${fmt.dur(p.pace_s_per_km * 1.609344)}/mi` : `${fmt.dur(p.pace_s_per_km)}/km`);
+    chart('tr-econ-chart', {type: 'line', data: {labels: pts.map((p) => fmt.day(p.at)), datasets: [
+        scatterLine(`outdoor run (${unit})`, pts.map((p) => (p.treadmill ? null : per(p.m_per_beat))), '#0b6bcb', {showLine: false}),
+        scatterLine('treadmill', pts.map((p) => (p.treadmill ? per(p.m_per_beat) : null)), '#8a93a6', {showLine: false, backgroundColor: 'transparent'}),
+        scatterLine(`average of last ${d.rolling_runs}`, pts.map((p) => per(p.rolling)), '#08457e', {pointRadius: 0, borderWidth: 2.2, spanGaps: true}),
+        scatterLine('watch VO2 max', pts.map((p) => p.vo2max), '#e4572e', {yAxisID: 'y1', showLine: false, pointStyle: 'rectRot'})]},
+        options: {scales: {x: timeAxis(), y: {title: {display: true, text: unit}}, y1: {position: 'right', grid: {drawOnChartArea: false}, title: {display: true, text: 'VO2 max'}}},
+            plugins: {tooltip: {callbacks: {footer: (items) => { const p = pts[items[0].dataIndex]; return `${pace(p)} · ${p.avg_hr} bpm · ${p.minutes} min${p.treadmill ? ' · treadmill' : ''}`; }}}},
+            onClick: (ev, els) => { if (els.length) go('detail', pts[els[0].index].id); }}});
+}
 
 // ---------------------------------------------------------------- body, gear
 async function loadBody() {

@@ -87,6 +87,12 @@ def record_progression():
                                                               request.args.get('sport') or None)})
 
 
+@trends_bp.route('/api/trends/economy')
+def economy():
+    start, end = _range()
+    return jsonify(fitness.running_economy_series(g.user.id, start, end))
+
+
 @trends_bp.route('/api/trends/efficiency')
 def efficiency():
     start, end = _range()
