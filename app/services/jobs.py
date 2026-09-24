@@ -131,7 +131,8 @@ def run_sync(home: Path, job: Job, payload: dict) -> dict:
     result = activities.sync_user(home, job.user_id, progress, full=bool(payload.get('full')),
                                   limit=payload.get('limit'))
     if payload.get('health') and not result.get('stopped'):
-        result['health'] = health.sync_user(home, job.user_id, progress)
+        result['health'] = health.sync_user(home, job.user_id, progress,
+                                            recent_only=bool(payload.get('quick')))
         result['stopped'] = result['health'].get('stopped')
     if result.get('stopped') in ('rate_limited', 'budget'):
         # Every account leaves from the same IP: a 429 ends the night for everybody.

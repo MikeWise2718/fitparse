@@ -121,6 +121,38 @@ function route() {
 }
 const reload = () => VIEWS[state.view](state.arg);
 
+// ---------------------------------------------------------------- header sync button
+// Its own timer, not state.poll: route() clears that on every tab change, and a sync should
+// keep being watched while you move around.
+async function initHeaderSync() {
+    const btn = $('hdr-sync'); if (!btn) return;
+    const s = await api('/api/sync/status', {quiet: true});
+    if (!s._ok || s.auth !== 'ok') return;          // not connected: the Import tab explains why
+    btn.hidden = false;
+    const idle = () => { btn.disabled = false; btn.textContent = 'Sync'; };
+    const watch = (id) => {
+        btn.disabled = true; btn.textContent = 'Syncing…';
+        const timer = setInterval(async () => {
+            const d = await api(`/api/jobs/${id}`, {quiet: true});
+            if (!d._ok) { clearInterval(timer); idle(); return; }
+            const j = d.job;
+            if (j.status === 'failed') { clearInterval(timer); idle(); toast(`Sync failed: ${j.message || 'see the Import tab'}`); return; }
+            if (j.status !== 'done') return;
+            clearInterval(timer); idle();
+            const r = j.result || {}, n = (r.imported || 0) + (r.replaced || 0);
+            if (r.stopped) toast(`Sync stopped early (${r.stopped}); the next one resumes.`);
+            else toast(n ? `Sync done: ${n} new activit${n === 1 ? 'y' : 'ies'}.` : 'Sync done: nothing new on Garmin Connect.');
+            if (n) { loadSports(); reload(); }
+        }, 2000);
+    };
+    if (s.running) watch(s.running.id);
+    btn.addEventListener('click', async () => {
+        const d = await api('/api/sync/run', {method: 'POST', json: {health: true, quick: true}, quiet: true});
+        if (d._ok || d.error === 'already_running') watch(d.job.id);
+        else toast(d.error === 'login_required' ? 'Garmin needs you to sign in again (Import tab).' : `Sync failed to start (${d.error || d._status}).`);
+    });
+}
+
 // ---------------------------------------------------------------- dashboard
 function volumeChart(id, data, metric) {
     chart(id, {type: 'bar', data: {labels: data.buckets, datasets: data.sports.map((sp, i) => ({label: fmt.sport(sp), backgroundColor: color(sp, i),
@@ -674,5 +706,6 @@ function wire() {
     wire(); await loadSports();
     if (!location.hash) { let last = null; try { last = localStorage.getItem('fitmon.view'); } catch (e) { /* ignore */ } if (last && last !== 'detail' && VIEWS[last]) location.hash = '#' + last; }
     route();
+    initHeaderSync();
 })();
 })();

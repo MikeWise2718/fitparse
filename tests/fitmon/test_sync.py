@@ -275,3 +275,26 @@ def test_disconnect_removes_only_the_token(app, home, alice):
     args_missing = type('Args', (), {'username': 'nobody'})()
     with app.app_context():
         assert cli.cmd_disconnect(app, args_missing) == 1
+
+
+def test_quick_sync_is_queued_with_the_flag_and_skips_health_backfill(app, home, alice):
+    """The header button: new activities plus today's health, without the back-fill that
+    makes the nightly run take minutes."""
+    import json
+    from datetime import date, timedelta
+    from app.models import Job, db
+    from app.sync import client as gc, health
+    gc.save_tokens(home, alice.user_id, '{"di_token": "t"}')
+
+    resp = alice.post('/api/sync/run', json={'health': True, 'quick': True})
+    assert resp.status_code == 202
+    with app.app_context():
+        payload = json.loads(db.session.get(Job, resp.get_json()['job']['id']).payload)
+        assert payload['quick'] is True
+        today = date(2026, 9, 24)
+        assert health.days_to_fetch(alice.user_id, today=today, recent_only=True) == [today, today - timedelta(days=1)]
+        assert len(health.days_to_fetch(alice.user_id, today=today)) > 2    # the nightly run still back-fills
+
+    # A second press while one is queued hands back that job rather than starting another.
+    again = alice.post('/api/sync/run', json={'quick': True})
+    assert again.status_code == 409 and again.get_json()['job']['id'] == resp.get_json()['job']['id']

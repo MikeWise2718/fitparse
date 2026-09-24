@@ -108,7 +108,9 @@ def run():
     existing = auth.scoped(Job).filter(Job.kind == 'sync', Job.status.in_(jobs.ACTIVE)).first()
     if existing:
         return jsonify({'error': 'already_running', 'job': jobs.job_dict(existing)}), 409
-    job = jobs.enqueue(g.user.id, 'sync', {'full': bool(data.get('full')), 'health': bool(data.get('health', True))})
+    # `quick`: the header button - new activities plus today's health, no back-fill.
+    job = jobs.enqueue(g.user.id, 'sync', {'full': bool(data.get('full')), 'health': bool(data.get('health', True)),
+                                           'quick': bool(data.get('quick'))})
     return jsonify({'job': jobs.job_dict(job)}), 202
 
 

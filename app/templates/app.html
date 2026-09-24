@@ -25,6 +25,7 @@
         <a data-view="settings">Settings</a>
         {% if user.is_admin %}<a data-view="admin">Admin</a>{% endif %}
     </nav>
+    <button id="hdr-sync" class="hdr-sync" hidden title="Pull new activities from Garmin Connect now">Sync</button>
     <div class="who"><span>{{ user.display_name or user.username }}</span><a id="logout">Sign out</a></div>
 </header>
 

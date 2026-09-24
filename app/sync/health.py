@@ -108,9 +108,13 @@ def reindex_from_disk(home: Path, user_id: int) -> int:
     return n
 
 
-def days_to_fetch(user_id: int, today: date | None = None) -> list:
-    """Newest first. Yesterday and today are always refreshed (the numbers settle overnight)."""
+def days_to_fetch(user_id: int, today: date | None = None, recent_only: bool = False) -> list:
+    """Newest first. Yesterday and today are always refreshed (the numbers settle overnight).
+    `recent_only` skips the back-fill: an on-demand sync wants today's numbers in seconds, and
+    the nightly run carries on filling the history."""
     today = today or date.today()
+    if recent_only:
+        return [today, today - timedelta(days=1)]
     have = {d for (d,) in db.session.query(DailyHealth.day).filter(DailyHealth.user_id == user_id).all()}
     wanted = [today - timedelta(days=i) for i in range(BACKFILL_DAYS)]
     return [d for d in wanted if d not in have or (today - d).days <= 1][:MAX_DAYS_PER_RUN]
@@ -134,12 +138,13 @@ def weigh_ins(client, home: Path, days: list) -> dict:
     return out
 
 
-def sync_user(home: Path, user_id: int, progress, client=None, delay: float | None = None) -> dict:
+def sync_user(home: Path, user_id: int, progress, client=None, delay: float | None = None,
+              recent_only: bool = False) -> dict:
     result = {'days': 0, 'stopped': None}
     delay = get_global_settings(home)['garmin_delay_seconds'] if delay is None else delay
     try:
         client = client or gc.connect(home, user_id)
-        days = days_to_fetch(user_id)
+        days = days_to_fetch(user_id, recent_only=recent_only)
         progress.update(0, f'health: {len(days)} day(s)', total=len(days), force=True)
         try:
             weights = weigh_ins(client, home, days)

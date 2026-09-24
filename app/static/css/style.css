@@ -21,6 +21,9 @@ nav.tabs { display: flex; gap: 2px; flex-wrap: wrap; flex: 1; }
 nav.tabs a { padding: 6px 12px; border-radius: 6px; color: var(--ink); }
 nav.tabs a.active { background: var(--accent); color: var(--accent-ink); text-decoration: none; }
 .who { color: var(--muted); display: flex; gap: 10px; align-items: center; }
+.hdr-sync { margin-left: auto; padding: 4px 12px; }
+.hdr-sync[hidden] { display: none; }
+.hdr-sync + .who { margin-left: 0; }
 
 .filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 16px;
            border-bottom: 1px solid var(--line); background: var(--panel); }
