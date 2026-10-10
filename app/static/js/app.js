@@ -176,7 +176,9 @@ async function initHeaderSync() {
 function volumeChart(id, data, metric) {
     chart(id, {type: 'bar', data: {labels: data.buckets, datasets: data.sports.map((sp, i) => ({label: fmt.sport(sp), backgroundColor: color(sp, i),
         data: data.data[sp].map((c) => (c ? c[metric] : 0))}))},
-        options: {scales: {x: {stacked: true}, y: {stacked: true, title: {display: true, text: metric}}}}});
+        // Weekly buckets are dates and monthly ones yyyy-mm, so both get month marks; yearly ones are plain years.
+        options: {scales: {x: String(data.buckets[0] || '').length > 4 ? timeAxis({stacked: true}) : {stacked: true},
+                           y: {stacked: true, title: {display: true, text: metric}}}}});
 }
 async function loadDashboard() {
     const [d, fit, vol, cal] = await Promise.all([api('/api/dashboard'), api('/api/fitness?' + range()),
@@ -212,7 +214,7 @@ async function loadDashboard() {
         {type: 'line', label: 'form (TSB)', data: fit.tsb, borderColor: '#1a8a4a', pointRadius: 0, borderWidth: 1.5, yAxisID: 'y', fill: {target: 'origin', above: 'rgba(26,138,74,.10)', below: 'rgba(192,57,43,.10)'}}]},
         // Name both axes: with only y1 declared, Chart.js bound every dataset to it and drew an
         // empty 0-1 'y' axis on the left.
-        options: {scales: {x: {ticks: {maxTicksLimit: 12}}, y: {position: 'left', title: {display: true, text: 'CTL · ATL · TSB'}},
+        options: {scales: {x: timeAxis(), y: {position: 'left', title: {display: true, text: 'CTL · ATL · TSB'}},
                            y1: {position: 'right', grid: {drawOnChartArea: false}, title: {display: true, text: 'daily load'}}}}});
     state.dashVolume = vol; volumeChart('dash-volume-chart', vol, $('dash-volume-metric').value);
 
@@ -491,7 +493,41 @@ function paintTrack() {
 
 // ---------------------------------------------------------------- trends
 const scatterLine = (label, pts, col, extra = {}) => Object.assign({label, data: pts, borderColor: col, backgroundColor: col, pointRadius: 3, showLine: true, borderWidth: 1.3, tension: .2}, extra);
-const timeAxis = () => ({type: 'category', ticks: {maxTicksLimit: 12}});
+// Date axes: the labels are ISO days, one per point. Instead of letting Chart.js label whichever
+// days it skips to (the 13th, the 17th...), mark where each month starts - a short month name
+// and a gridline - with the year on January and on the first mark. Long spans thin out to
+// quarters, then years. The tooltip still shows the exact day.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const monthMarkCache = new WeakMap();
+function monthMarks(labels) {
+    if (monthMarkCache.has(labels)) return monthMarkCache.get(labels);
+    const starts = []; let prev = null;
+    labels.forEach((l, i) => { const m = String(l).slice(0, 7); if (/^\d{4}-\d{2}$/.test(m) && m !== prev) { starts.push([i, m]); prev = m; } });
+    // The first point is rarely the 1st of its month; marking it would put "Oct" on 10 October.
+    if (starts.length > 1 && starts[0][0] === 0 && String(labels[0]).slice(8, 10) > '07') starts.shift();
+    let marks = null;
+    if (starts.length >= 2) {
+        const step = starts.length <= 15 ? 1 : starts.length <= 40 ? 3 : 12;
+        marks = new Map();
+        for (const [i, m] of starts) {
+            const year = m.slice(0, 4), mon = +m.slice(5, 7);
+            if ((mon - 1) % step) continue;
+            marks.set(i, step === 12 ? year : (mon === 1 || !marks.size) ? `${MONTHS[mon - 1]} ${year}` : MONTHS[mon - 1]);
+        }
+    }
+    monthMarkCache.set(labels, marks);
+    return marks;
+}
+const timeAxis = (extra = {}) => Object.assign({type: 'category',
+    ticks: {autoSkip: false, maxRotation: 0, callback(value, index) {
+        const labels = this.chart.data.labels, marks = monthMarks(labels);
+        if (marks) return marks.get(index) ?? null;
+        // Under two months of data: plain days, thinned to about eight.
+        const every = Math.max(1, Math.ceil(labels.length / 8));
+        return index % every ? null : String(labels[index]).slice(5, 10);
+    }},
+    grid: {color: (ctx) => { const marks = monthMarks(ctx.chart.data.labels);
+        return !marks || marks.has(ctx.index) ? 'rgba(128,128,128,.28)' : 'transparent'; }}}, extra);
 async function loadTrends() {
     const q = query(), rq = range().toString(), sportOnly = $('flt-sport').value ? `sport=${$('flt-sport').value}&` : '';
     const [vo2, vol, pc, best, te, swim, strength, body] = await Promise.all([api('/api/trends/vo2max?' + q), api(`/api/trends/volume?bucket=${$('tr-volume-bucket').value}&` + rq),
@@ -522,7 +558,7 @@ async function loadTrends() {
         options: {scales: {x: timeAxis(), y: {reverse: true, title: {display: true, text: 'faster ↑'}}, y1: {position: 'right', grid: {drawOnChartArea: false}}}}});
     const sdays = [...new Set(Object.values(strength.categories).flat().map((x) => x.day))].sort();
     chart('tr-strength-chart', {type: 'bar', data: {labels: sdays, datasets: Object.entries(strength.categories).map(([cat, rows], i) => ({label: fmt.sport(cat), backgroundColor: `hsl(${i * 47 % 360}, 60%, 50%)`, data: sdays.map((d) => (rows.find((r) => r.day === d) || {}).volume_kg || 0)}))},
-        options: {scales: {x: {stacked: true, ticks: {maxTicksLimit: 12}}, y: {stacked: true}}}});
+        options: {scales: {x: timeAxis({stacked: true}), y: {stacked: true}}}});
     const daily = body.series.daily; $('tr-recovery-panel').style.display = daily.length ? '' : 'none';
     if (daily.length) { const fit = await api('/api/fitness?' + rq), load = Object.fromEntries(fit.days.map((d, i) => [d, fit.atl[i]])), rows = daily.filter((h) => (!$('flt-from').value || h.day >= $('flt-from').value));
         chart('tr-recovery-chart', {data: {labels: rows.map((h) => h.day), datasets: [{type: 'line', label: 'fatigue (ATL)', data: rows.map((h) => load[h.day] ?? null), borderColor: '#e4572e', pointRadius: 0, yAxisID: 'y1', spanGaps: true},
