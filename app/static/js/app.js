@@ -30,6 +30,17 @@ async function api(url, opts = {}) {
 }
 function toast(text) { const t = $('toast'); t.textContent = text; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 4000); }
 function esc(v) { return String(v ?? '').replace(/[&<>"']/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])); }
+// Whose data this is, written small in the top-right corner of every chart, so a screenshot of
+// any chart still says who it belongs to. The top padding keeps it clear of the legend.
+const ownerName = () => (state.user && (state.user.display_name || state.user.username)) || '';
+Chart.defaults.layout.padding = {top: 16};
+Chart.register({id: 'owner', afterDraw(c) {
+    const name = ownerName(); if (!name) return;
+    const ctx = c.ctx; ctx.save();
+    ctx.font = '11px system-ui, sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim() || '#6b7385';
+    ctx.fillText(name, c.width - 4, 2); ctx.restore();
+}});
 function chart(id, config) {
     if (state.charts[id]) state.charts[id].destroy();
     const el = $(id); if (!el) return null;
@@ -695,6 +706,7 @@ function renderSync(s) {
 // ---------------------------------------------------------------- settings, admin
 async function loadSettings() {
     const s = state.settings = await api('/api/settings');
+    $('set-name').value = state.user.display_name || state.user.username;
     $('set-units').value = s.units; $('set-week').value = s.week_start; $('set-range').value = s.default_range_days; $('set-load').value = s.load_model;
     $('set-maxhr').value = s.zones.max_hr || ''; $('set-lthr').value = s.zones.threshold_hr || ''; $('set-rhr').value = s.zones.resting_hr || ''; $('set-ftp').value = s.zones.ftp || '';
     const d = await api('/api/auth/devices');
@@ -763,6 +775,12 @@ function wire() {
     const n = (id) => $(id).value === '' ? null : +$(id).value;
     $('set-save').addEventListener('click', async () => { const d = await api('/api/settings', {method: 'POST', json: {units: $('set-units').value, week_start: $('set-week').value, default_range_days: n('set-range') || 365, load_model: $('set-load').value,
         zones: {max_hr: n('set-maxhr'), threshold_hr: n('set-lthr'), resting_hr: n('set-rhr'), ftp: n('set-ftp')}}}); if (d._ok) { state.settings = d; toast('Saved. Re-index under Import to apply new zones to past activities.'); } });
+    $('set-name-save').addEventListener('click', async () => {
+        const d = await api('/api/account/profile', {method: 'POST', json: {display_name: $('set-name').value}});
+        if (!d._ok) return;
+        state.user = d.user; $('who-name').textContent = d.user.display_name; $('set-name').value = d.user.display_name;
+        Object.values(state.charts).forEach((c) => c && c.draw());     // the corner name too
+        toast('Name saved.'); });
     $('set-pw-save').addEventListener('click', async () => { const d = await api('/api/auth/password', {method: 'POST', json: {old_password: $('set-pw-old').value, new_password: $('set-pw-new').value}});
         if (d._ok) { state.csrf = d.csrf; $('set-pw-old').value = $('set-pw-new').value = ''; toast('Password changed.'); loadSettings(); } });
     $('set-logout-all').addEventListener('click', async () => { await api('/api/auth/logout-all', {method: 'POST'}); location.href = '/login'; });

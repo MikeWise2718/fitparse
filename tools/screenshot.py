@@ -7,7 +7,8 @@ The picture is public - /api/screenshot needs no sign-in and the landing page sh
 guests - so it must never contain anyone's real activities or health numbers. This builds a
 throwaway fitmon home in a temp directory, seeds a demo user with a made-up training year
 (a build, a race taper, a rebuild), serves it on localhost, signs in with a password generated
-in this process and never shown, and captures the dashboard at 1280x800, en-GB, Europe/Berlin.
+in this process and never shown, and captures the dashboard at 1280x800, en-GB, Europe/Berlin,
+with a "Demo data" badge on it so the picture cannot pass for anyone's real dashboard.
 Fleet rules: D:\\hw\\pokeflute\\docs\\service-screenshots.md. Re-run when the dashboard changes.
 """
 import argparse
@@ -187,6 +188,13 @@ def main() -> int:
             page = context.new_page()
             page.goto(f'{base}/#{args.view}', wait_until='networkidle')
             page.wait_for_timeout(1500)                 # let the charts finish drawing
+            # Say so on the picture itself: on the landing card it could pass for someone's real
+            # dashboard. Top half, so it survives the 16:10 crop, over the empty end of the filter bar.
+            page.evaluate("""() => { const b = document.createElement('div'); b.textContent = 'Demo data';
+                Object.assign(b.style, {position: 'fixed', top: '60px', right: '16px', zIndex: 5000, padding: '6px 14px',
+                    background: '#d98e04', color: '#fff', font: '600 15px system-ui, sans-serif', letterSpacing: '.04em',
+                    borderRadius: '6px', boxShadow: '0 1px 4px rgba(0,0,0,.25)'});
+                document.body.appendChild(b); }""")
             page.mouse.move(WIDTH - 1, HEIGHT - 1)      # no hover state on anything
             args.output.parent.mkdir(parents=True, exist_ok=True)
             page.screenshot(path=str(args.output))

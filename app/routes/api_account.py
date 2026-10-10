@@ -46,6 +46,26 @@ def export():
                      mimetype='application/zip')
 
 
+DISPLAY_NAME_MAX = 60
+
+
+@account_bp.route('/api/account/profile', methods=['POST'])
+def profile():
+    """The name shown in the header and in the corner of every chart, so a screenshot says whose
+    data it is. Only your own: there is no user id in the route to get wrong."""
+    data = request.get_json(silent=True) or {}
+    name = ' '.join(str(data.get('display_name') or '').split())    # collapse whitespace, drop control chars
+    name = ''.join(ch for ch in name if ch.isprintable())
+    if not name:
+        return jsonify({'error': 'display_name_required'}), 400
+    if len(name) > DISPLAY_NAME_MAX:
+        return jsonify({'error': 'display_name_too_long', 'message': f'At most {DISPLAY_NAME_MAX} characters.'}), 400
+    old, g.user.display_name = g.user.display_name, name
+    db.session.commit()
+    event_logger.info('account.renamed', f'{g.user.username} is now shown as {name!r}', user_id=g.user.id, previous=old)
+    return jsonify({'user': g.user.to_dict()})
+
+
 @account_bp.route('/api/account/delete', methods=['POST'])
 def delete():
     data = request.get_json(silent=True) or {}

@@ -27,7 +27,7 @@
         <a data-view="about">About</a>
     </nav>
     <button id="hdr-sync" class="hdr-sync" hidden title="Pull new activities from Garmin Connect now">Sync</button>
-    <div class="who"><span>{{ user.display_name or user.username }}</span><a id="logout">Sign out</a></div>
+    <div class="who"><span id="who-name">{{ user.display_name or user.username }}</span><a id="logout">Sign out</a></div>
 </header>
 
 <div class="filters" id="filters">
@@ -204,7 +204,10 @@
             </div>
             <button class="primary" id="set-save">Save</button>
         </div>
-        <div class="panel"><h2>Password</h2>
+        <div class="panel"><h2>Profile</h2>
+            <label class="field"><span>Display name <small class="muted">shown in the header and on every chart</small></span><input id="set-name" maxlength="60" autocomplete="name"></label>
+            <button id="set-name-save">Save name</button>
+            <h2 style="margin-top:16px">Password</h2>
             <label class="field"><span>Current</span><input id="set-pw-old" type="password" autocomplete="current-password"></label>
             <label class="field"><span>New ({{ min_password_length }}+ characters)</span><input id="set-pw-new" type="password" autocomplete="new-password"></label>
             <button id="set-pw-save">Change password</button> <span class="muted">ends every other session</span>

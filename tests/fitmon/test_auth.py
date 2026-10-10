@@ -231,3 +231,18 @@ def test_screenshot_is_public_png_without_redirect(app, alice):
     page = alice.get('/').get_data(as_text=True)                   # the About tab shows the same image
     assert 'id="about-shot"' in page and 'src="/api/screenshot"' in page
     assert alice.post('/api/settings', json={'about_screenshot_open': True}).get_json()['about_screenshot_open'] is True
+
+
+def test_display_name_can_be_changed_and_is_validated(app, alice, bob):
+    """Shown in the header and in the corner of every chart; only ever your own."""
+    from app.models import User, db
+    resp = alice.post('/api/account/profile', json={'display_name': '  Mike \t Wise '})
+    assert resp.status_code == 200 and resp.get_json()['user']['display_name'] == 'Mike Wise'
+    assert 'id="who-name">Mike Wise<' in alice.get('/').get_data(as_text=True)
+
+    assert alice.post('/api/account/profile', json={'display_name': '   '}).get_json()['error'] == 'display_name_required'
+    assert alice.post('/api/account/profile', json={'display_name': 'x' * 61}).get_json()['error'] == 'display_name_too_long'
+    assert alice.post('/api/account/profile', json={'display_name': 'a\x00b'}).get_json()['user']['display_name'] == 'ab'
+
+    with app.app_context():                   # nothing in the request can point it at someone else
+        assert db.session.get(User, bob.user_id).display_name == 'bob'
