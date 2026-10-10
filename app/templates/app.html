@@ -24,6 +24,7 @@
         <a data-view="import">Import</a>
         <a data-view="settings">Settings</a>
         {% if user.is_admin %}<a data-view="admin">Admin</a>{% endif %}
+        <a data-view="about">About</a>
     </nav>
     <button id="hdr-sync" class="hdr-sync" hidden title="Pull new activities from Garmin Connect now">Sync</button>
     <div class="who"><span>{{ user.display_name or user.username }}</span><a id="logout">Sign out</a></div>
@@ -237,6 +238,24 @@
         <div class="scroll" style="max-height:40vh"><table id="adm-events" class="mono"></table></div></div>
 </section>
 {% endif %}
+
+<section class="view" id="view-about">
+    <div class="panel">
+        <h2>Fitmon <small>v{{ version }}</small></h2>
+        <p>Fitness monitoring from the FIT files your Garmin watch records: training load and form,
+            VO2 max, running economy, volume, zones and daily health, for everyone you invite.</p>
+        <p class="muted">Activities come from Garmin Connect each night (or the Sync button), or from
+            files and Garmin export zips on the Import tab. Your original FIT files are kept, and every
+            number here can be rebuilt from them.</p>
+        <details id="about-shot" class="about-shot">
+            <summary>On the landing page</summary>
+            <p class="muted">The picture the house landing page shows on fitmon's card. It is public, so
+                it shows an invented training year, not anyone's data.</p>
+            <a href="/api/screenshot" target="_blank" rel="noopener" title="Open full size">
+                <img src="/api/screenshot" alt="Fitmon dashboard with demo data" loading="lazy"></a>
+        </details>
+    </div>
+</section>
 </main>
 <div class="toast" id="toast"></div>
 

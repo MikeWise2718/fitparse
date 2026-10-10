@@ -26,7 +26,7 @@ MIN_PASSWORD_LENGTH = 8    # NIST 800-63B floor; length is the only rule, no com
 # Endpoints reachable without a login. Everything else is denied by default in
 # require_login(), so a new route is private unless it is deliberately added here.
 PUBLIC_ENDPOINTS = {
-    'static', 'core.ping', 'pages.login_page', 'pages.invite_page',
+    'static', 'core.ping', 'core.screenshot', 'pages.login_page', 'pages.invite_page',
     'auth.login', 'auth.invite_info', 'auth.invite_accept',
 }
 CSRF_EXEMPT = {'auth.login', 'auth.invite_accept'}

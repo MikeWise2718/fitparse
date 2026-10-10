@@ -112,7 +112,8 @@ function setPreset(days) { if (days === 'all') { $('flt-from').value = ''; $('fl
 
 function showNote() { $('flt-note').textContent = [state.rangeNote, state.staleNote].filter(Boolean).join(' · '); }
 const VIEWS = {dashboard: loadDashboard, activities: () => loadActivities(true), detail: loadDetail, trends: loadTrends,
-               body: loadBody, gear: loadGear, explorer: loadExplorer, import: loadImport, settings: loadSettings, admin: loadAdmin};
+               body: loadBody, gear: loadGear, explorer: loadExplorer, import: loadImport, settings: loadSettings, admin: loadAdmin,
+               about: loadAbout};
 function go(view, arg) { location.hash = arg != null ? `#${view}/${arg}` : `#${view}`; }
 function route() {
     const [view, arg] = (location.hash.slice(1) || 'dashboard').split('/');
@@ -126,6 +127,18 @@ function route() {
     VIEWS[name](arg);
 }
 const reload = () => VIEWS[state.view](state.arg);
+
+// ---------------------------------------------------------------- about
+function loadAbout() {
+    // Collapsed by default; whether it was last left open is a per-user setting, so it follows
+    // the person to another browser.
+    const box = $('about-shot'); box.open = !!(state.settings && state.settings.about_screenshot_open);
+    if (!box.dataset.wired) {
+        box.dataset.wired = '1';
+        box.addEventListener('toggle', () => { if (state.settings) state.settings.about_screenshot_open = box.open;
+            api('/api/settings', {method: 'POST', json: {about_screenshot_open: box.open}, quiet: true}); });
+    }
+}
 
 // ---------------------------------------------------------------- header sync button
 // Its own timer, not state.poll: route() clears that on every tab change, and a sync should
@@ -194,10 +207,13 @@ async function loadDashboard() {
 
     chart('dash-fitness-chart', {data: {labels: fit.days, datasets: [
         {type: 'bar', label: 'daily load', data: fit.load, backgroundColor: 'rgba(138,147,166,.35)', yAxisID: 'y1'},
-        {type: 'line', label: 'fitness (CTL)', data: fit.ctl, borderColor: '#0b6bcb', pointRadius: 0, borderWidth: 2},
-        {type: 'line', label: 'fatigue (ATL)', data: fit.atl, borderColor: '#e4572e', pointRadius: 0, borderWidth: 1.5},
-        {type: 'line', label: 'form (TSB)', data: fit.tsb, borderColor: '#1a8a4a', pointRadius: 0, borderWidth: 1.5, fill: {target: 'origin', above: 'rgba(26,138,74,.10)', below: 'rgba(192,57,43,.10)'}}]},
-        options: {scales: {x: {ticks: {maxTicksLimit: 12}}, y1: {position: 'right', grid: {drawOnChartArea: false}}}}});
+        {type: 'line', label: 'fitness (CTL)', data: fit.ctl, borderColor: '#0b6bcb', pointRadius: 0, borderWidth: 2, yAxisID: 'y'},
+        {type: 'line', label: 'fatigue (ATL)', data: fit.atl, borderColor: '#e4572e', pointRadius: 0, borderWidth: 1.5, yAxisID: 'y'},
+        {type: 'line', label: 'form (TSB)', data: fit.tsb, borderColor: '#1a8a4a', pointRadius: 0, borderWidth: 1.5, yAxisID: 'y', fill: {target: 'origin', above: 'rgba(26,138,74,.10)', below: 'rgba(192,57,43,.10)'}}]},
+        // Name both axes: with only y1 declared, Chart.js bound every dataset to it and drew an
+        // empty 0-1 'y' axis on the left.
+        options: {scales: {x: {ticks: {maxTicksLimit: 12}}, y: {position: 'left', title: {display: true, text: 'CTL · ATL · TSB'}},
+                           y1: {position: 'right', grid: {drawOnChartArea: false}, title: {display: true, text: 'daily load'}}}}});
     state.dashVolume = vol; volumeChart('dash-volume-chart', vol, $('dash-volume-metric').value);
 
     const year = new Date().getFullYear(), byDay = Object.fromEntries(cal.days.map((c) => [c.day, c]));

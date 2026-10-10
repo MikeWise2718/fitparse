@@ -14,6 +14,7 @@ USER_DEFAULTS = {
     'default_range_days': 365,
     'load_model': 'auto',         # auto (TSS when power+FTP, else TRIMP) | trimp | tss
     'load_sports': [],            # empty = all sports count toward load
+    'about_screenshot_open': False,   # About tab: the "On the landing page" section
     'zones': {                    # overrides; null = take from the FIT zones_target snapshots
         'max_hr': None, 'threshold_hr': None, 'resting_hr': None, 'ftp': None,
     },

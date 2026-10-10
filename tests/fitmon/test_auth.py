@@ -218,3 +218,16 @@ def test_another_apps_session_cookie_on_the_same_host_does_not_break_writes(app,
     assert carol.post('/api/settings', json={'units': 'metric'}).get_json() == {'error': 'csrf_failed'}
     carol.csrf = carol.get('/api/auth/me').get_json()['csrf']
     assert carol.post('/api/settings', json={'units': 'metric'}).status_code == 200
+
+
+def test_screenshot_is_public_png_without_redirect(app, alice):
+    """Fleet standard: the landing page fetches it signed out and does not follow redirects."""
+    anon = app.test_client()
+    resp = anon.get('/api/screenshot')
+    assert resp.status_code == 200 and resp.mimetype == 'image/png'
+    assert resp.data[:8] == b'\x89PNG\r\n\x1a\n'
+    assert anon.get('/api/activities').status_code == 401        # the exemption is that one route only
+
+    page = alice.get('/').get_data(as_text=True)                   # the About tab shows the same image
+    assert 'id="about-shot"' in page and 'src="/api/screenshot"' in page
+    assert alice.post('/api/settings', json={'about_screenshot_open': True}).get_json()['about_screenshot_open'] is True

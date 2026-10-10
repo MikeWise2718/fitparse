@@ -22,6 +22,8 @@ nav.tabs a { padding: 6px 12px; border-radius: 6px; color: var(--ink); }
 nav.tabs a.active { background: var(--accent); color: var(--accent-ink); text-decoration: none; }
 .who { color: var(--muted); display: flex; gap: 10px; align-items: center; }
 .hdr-sync { margin-left: auto; padding: 4px 12px; }
+.about-shot summary { cursor: pointer; font-weight: 600; margin-top: 8px; }
+.about-shot img { display: block; max-width: 640px; width: 100%; border: 1px solid var(--line, #ddd); border-radius: 6px; margin-top: 6px; }
 .hdr-sync[hidden] { display: none; }
 .hdr-sync + .who { margin-left: 0; }
 
