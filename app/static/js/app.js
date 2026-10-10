@@ -18,6 +18,12 @@ async function api(url, opts = {}) {
     const resp = await fetch(url, init);
     if (resp.status === 401) { location.href = '/login'; throw new Error('login required'); }
     const body = await resp.json().catch(() => ({}));
+    // A tab open across a session change (another sign-in, a server restart, a cookie lost)
+    // holds a dead token. Fetch the current one and try once more rather than failing.
+    if (resp.status === 403 && body.error === 'csrf_failed' && !opts.csrfRetried) {
+        const me = await fetch('/api/auth/me').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+        if (me && me.csrf) { state.csrf = me.csrf; return api(url, Object.assign({}, opts, {csrfRetried: true})); }
+    }
     if (!resp.ok && !opts.quiet) { toast(body.message || body.error || `Request failed (${resp.status})`); }
     body._ok = resp.ok; body._status = resp.status;
     return body;

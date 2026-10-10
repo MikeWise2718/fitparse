@@ -196,3 +196,25 @@ def test_login_over_plain_http_is_refused_instead_of_silently_not_sticking(app, 
     assert proxied.status_code == 200
     page = app.test_client().get('/login', base_url='http://spearow:8640').get_data(as_text=True)
     assert 'plain HTTP' in page and 'href="http://localhost:8640/login"' in page
+
+
+def test_another_apps_session_cookie_on_the_same_host_does_not_break_writes(app, make_user, api):
+    """Cookies are per host, not per port. ytsum shares munchlax's Tailscale name and uses
+    Flask's default 'session' cookie; under that same name it replaced fitmon's, wiping the
+    CSRF token, and every POST failed while the device cookie kept the pages loading."""
+    make_user('carol')
+    carol = api()
+    assert carol.login('carol', remember=True).status_code == 200
+    assert carol.client.get_cookie('fitmon_session') is not None
+    assert carol.client.get_cookie('session') is None
+
+    # Another app on the host sets its own 'session': fitmon must not even read it.
+    carol.client.set_cookie('session', 'ytsum-signed-garbage')
+    assert carol.post('/api/settings', json={'units': 'metric'}).status_code == 200
+
+    # Lose fitmon's own session entirely (what the old collision did): the stale token fails,
+    # and /api/auth/me - reached on the remember-me cookie alone - hands out a working one.
+    carol.client.delete_cookie('fitmon_session')
+    assert carol.post('/api/settings', json={'units': 'metric'}).get_json() == {'error': 'csrf_failed'}
+    carol.csrf = carol.get('/api/auth/me').get_json()['csrf']
+    assert carol.post('/api/settings', json={'units': 'metric'}).status_code == 200

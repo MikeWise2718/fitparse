@@ -35,6 +35,11 @@ def make_config(home: Path | None = None) -> dict:
         'SQLALCHEMY_DATABASE_URI': f'sqlite:///{db_path}',
         'SQLALCHEMY_TRACK_MODIFICATIONS': False,
         'MAX_CONTENT_LENGTH': 200 * 1024 * 1024,  # one request; zips of many activities
+        # Not Flask's default 'session': cookies are per host, not per port, and fitmon shares
+        # munchlax's Tailscale name with other Flask apps (ytsum on :8443). Under the default name
+        # each app overwrote the other's session, which wiped fitmon's CSRF token - every POST
+        # failed with csrf_failed while the device cookie kept the pages working.
+        'SESSION_COOKIE_NAME': 'fitmon_session',
         'SESSION_COOKIE_HTTPONLY': True,
         'SESSION_COOKIE_SAMESITE': 'Lax',
         'JSON_SORT_KEYS': False,
