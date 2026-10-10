@@ -177,7 +177,7 @@ function volumeChart(id, data, metric) {
     chart(id, {type: 'bar', data: {labels: data.buckets, datasets: data.sports.map((sp, i) => ({label: fmt.sport(sp), backgroundColor: color(sp, i),
         data: data.data[sp].map((c) => (c ? c[metric] : 0))}))},
         // Weekly buckets are dates and monthly ones yyyy-mm, so both get month marks; yearly ones are plain years.
-        options: {scales: {x: String(data.buckets[0] || '').length > 4 ? timeAxis({stacked: true}) : {stacked: true},
+        options: {scales: {x: String(data.buckets[0] || '').length > 4 ? timeAxis({stacked: true}, {bars: true}) : {stacked: true},
                            y: {stacked: true, title: {display: true, text: metric}}}}});
 }
 async function loadDashboard() {
@@ -512,22 +512,26 @@ function monthMarks(labels) {
         for (const [i, m] of starts) {
             const year = m.slice(0, 4), mon = +m.slice(5, 7);
             if ((mon - 1) % step) continue;
-            marks.set(i, step === 12 ? year : (mon === 1 || !marks.size) ? `${MONTHS[mon - 1]} ${year}` : MONTHS[mon - 1]);
+            marks.set(i, step === 12 ? year : (mon === 1 || !marks.size) ? [MONTHS[mon - 1], year] : MONTHS[mon - 1]);
         }
     }
     monthMarkCache.set(labels, marks);
     return marks;
 }
-const timeAxis = (extra = {}) => Object.assign({type: 'category',
-    ticks: {autoSkip: false, maxRotation: 0, callback(value, index) {
+// A tick whose label callback returns null is dropped along with its gridline, so every tick
+// left standing is a month start: its gridline marks the boundary, drawn stronger than the
+// horizontal grid, and the name sits just right of it, inside the month it names.
+// `bars`: for bar charts the line goes between bars (before the month's first bar) and the
+// name is centred under that bar - otherwise a monthly chart gets a line through every bar.
+const timeAxis = (extra = {}, {bars = false} = {}) => Object.assign({type: 'category',
+    ticks: {autoSkip: false, maxRotation: 0, align: bars ? 'center' : 'start', padding: 4, callback(value, index) {
         const labels = this.chart.data.labels, marks = monthMarks(labels);
         if (marks) return marks.get(index) ?? null;
         // Under two months of data: plain days, thinned to about eight.
         const every = Math.max(1, Math.ceil(labels.length / 8));
         return index % every ? null : String(labels[index]).slice(5, 10);
     }},
-    grid: {color: (ctx) => { const marks = monthMarks(ctx.chart.data.labels);
-        return !marks || marks.has(ctx.index) ? 'rgba(128,128,128,.28)' : 'transparent'; }}}, extra);
+    grid: {color: 'rgba(110,117,133,.55)', lineWidth: 1, tickLength: 8, offset: bars}}, extra);
 async function loadTrends() {
     const q = query(), rq = range().toString(), sportOnly = $('flt-sport').value ? `sport=${$('flt-sport').value}&` : '';
     const [vo2, vol, pc, best, te, swim, strength, body] = await Promise.all([api('/api/trends/vo2max?' + q), api(`/api/trends/volume?bucket=${$('tr-volume-bucket').value}&` + rq),
@@ -558,7 +562,7 @@ async function loadTrends() {
         options: {scales: {x: timeAxis(), y: {reverse: true, title: {display: true, text: 'faster ↑'}}, y1: {position: 'right', grid: {drawOnChartArea: false}}}}});
     const sdays = [...new Set(Object.values(strength.categories).flat().map((x) => x.day))].sort();
     chart('tr-strength-chart', {type: 'bar', data: {labels: sdays, datasets: Object.entries(strength.categories).map(([cat, rows], i) => ({label: fmt.sport(cat), backgroundColor: `hsl(${i * 47 % 360}, 60%, 50%)`, data: sdays.map((d) => (rows.find((r) => r.day === d) || {}).volume_kg || 0)}))},
-        options: {scales: {x: timeAxis({stacked: true}), y: {stacked: true}}}});
+        options: {scales: {x: timeAxis({stacked: true}, {bars: true}), y: {stacked: true}}}});
     const daily = body.series.daily; $('tr-recovery-panel').style.display = daily.length ? '' : 'none';
     if (daily.length) { const fit = await api('/api/fitness?' + rq), load = Object.fromEntries(fit.days.map((d, i) => [d, fit.atl[i]])), rows = daily.filter((h) => (!$('flt-from').value || h.day >= $('flt-from').value));
         chart('tr-recovery-chart', {data: {labels: rows.map((h) => h.day), datasets: [{type: 'line', label: 'fatigue (ATL)', data: rows.map((h) => load[h.day] ?? null), borderColor: '#e4572e', pointRadius: 0, yAxisID: 'y1', spanGaps: true},
