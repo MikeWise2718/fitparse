@@ -8,7 +8,7 @@ from sqlalchemy import func
 from .. import auth
 from ..events import event_logger
 from ..models import (BestEffort, Device, FitFile, Lap, Length, ProfileSnapshot, RECORD_COLUMNS, Record, Session,
-                      SessionExclusion, SessionTrim, StrengthSet, ZoneTime, db)
+                      SessionExclusion, SessionSport, SessionTrim, StrengthSet, ZoneTime, db)
 from ..services import importer, metrics
 
 activities_bp = Blueprint('activities', __name__)
@@ -117,6 +117,11 @@ def sports():
 
 
 
+def _sport_override(sess) -> dict | None:
+    o = db.session.get(SessionSport, (sess.file_id, sess.idx))
+    return {'recorded_sport': o.recorded_sport, 'recorded_sub_sport': o.recorded_sub_sport} if o else None
+
+
 def _hr_zone_bounds(sess) -> dict | None:
     """Lower bound in bpm of HR zones 1..5 for this activity, so the chart can colour each sample
     by zone. Resolved exactly as the importer does - this file's own watch profile first, then
@@ -153,6 +158,7 @@ def session_detail(session_id):
         'sets': [row_dict(x) for x in sess.sets],
         'zones': [row_dict(x) for x in sorted(sess.zone_times, key=lambda z: (z.kind, z.zone))],
         'hr_zones': _hr_zone_bounds(sess),
+        'sport_override': _sport_override(sess),
         'best_efforts': [row_dict(x, ['kind', 'window', 'value', 'offset_s'])
                          for x in sorted(sess.best_efforts, key=lambda b: (b.kind, b.window))],
         'devices': [row_dict(d) for d in devices],
@@ -261,6 +267,49 @@ def trim_session(session_id):
     importer.reindex_file(current_app.config['FITMON_HOME'], sess.file)
     fresh = Session.query.filter_by(file_id=sess.file_id, idx=sess.idx).first()
     return jsonify({'ok': True, 'session_id': fresh.id if fresh else None})
+
+
+# What an activity can be changed to: FIT sport / sub_sport pairs, as the watch writes them.
+SPORT_CHOICES = {
+    ('running', 'generic'), ('running', 'trail'), ('running', 'treadmill'),
+    ('cycling', 'road'), ('cycling', 'gravel_cycling'), ('cycling', 'mountain'), ('cycling', 'indoor_cycling'),
+    ('cycling', 'generic'), ('walking', 'generic'), ('hiking', 'generic'),
+    ('swimming', 'lap_swimming'), ('swimming', 'open_water'),
+    ('training', 'strength_training'), ('training', 'generic'),
+}
+
+
+@activities_bp.route('/api/sessions/<int:session_id>/sport', methods=['POST'])
+def change_sport(session_id):
+    """Correct the sport - a ride the watch saved as a run sets impossible running records.
+
+    Post {"sport": "cycling", "sub_sport": "gravel_cycling"}; {"sport": null} restores what
+    was recorded. Stored per (file, leg) and the file re-indexed, so every figure that depends
+    on the sport (best efforts, TSS, zones, volume by sport) is recomputed.
+    """
+    sess = auth.get_owned(Session, session_id)
+    data = request.get_json(silent=True) or {}
+    existing = db.session.get(SessionSport, (sess.file_id, sess.idx))
+    sport = data.get('sport')
+    if sport is None:
+        if existing:
+            db.session.delete(existing)
+    else:
+        sub = data.get('sub_sport') or 'generic'
+        if (sport, sub) not in SPORT_CHOICES:
+            return jsonify({'error': 'invalid_sport'}), 400
+        if existing:
+            existing.sport, existing.sub_sport = sport, sub
+        else:
+            db.session.add(SessionSport(file_id=sess.file_id, idx=sess.idx, user_id=g.user.id, sport=sport,
+                                        sub_sport=sub, recorded_sport=sess.sport, recorded_sub_sport=sess.sub_sport))
+    db.session.commit()
+    event_logger.info('session.sport_changed', f'session {sess.id} sport set to {sport or "as recorded"}',
+                      user_id=g.user.id, session_id=sess.id, sport=sport, sub_sport=data.get('sub_sport'))
+    importer.reindex_file(current_app.config['FITMON_HOME'], sess.file)
+    fresh = Session.query.filter_by(file_id=sess.file_id, idx=sess.idx).first()
+    return jsonify({'ok': True, 'session_id': fresh.id if fresh else None,
+                    'sport': fresh.sport if fresh else None, 'sub_sport': fresh.sub_sport if fresh else None})
 
 
 @activities_bp.route('/api/sessions/<int:session_id>/trim/suggest')

@@ -86,6 +86,7 @@
         <input type="range" id="pb-scrub" min="0" max="1" step="1" value="0" aria-label="Activity time">
         <span class="pb-time mono" id="pb-time">0:00</span>
         <span class="pb-read" id="pb-read"></span>
+        <button id="pb-end" title="The watch kept recording after you finished: end the activity at this point. Nothing is deleted; undo under Recording length.">✂ End here</button>
     </div>
 
     <!-- Movable, collapsible panels. data-panel is the key the saved layout uses; .wide spans both columns. -->
@@ -118,7 +119,15 @@
             <div class="dbody" id="det-trim-body"></div></div>
     </div>
     <div class="panel row">
-        <button id="det-rename">Rename</button><button id="det-trim">Trim…</button><button id="det-exclude">Not training</button><button id="det-explore">Open in explorer</button>
+        <button id="det-rename">Rename</button><button id="det-trim">Trim…</button><button id="det-exclude">Not training</button>
+        <select id="det-sport" title="Correct the sport, e.g. a ride the watch saved as a run">
+            <option value="">Change sport…</option>
+            <option value="running/generic">Running</option><option value="running/trail">Trail running</option><option value="running/treadmill">Treadmill running</option>
+            <option value="cycling/road">Road cycling</option><option value="cycling/gravel_cycling">Gravel cycling</option><option value="cycling/mountain">Mountain biking</option><option value="cycling/indoor_cycling">Indoor cycling</option>
+            <option value="walking/generic">Walking</option><option value="hiking/generic">Hiking</option>
+            <option value="swimming/lap_swimming">Pool swimming</option><option value="swimming/open_water">Open-water swimming</option>
+            <option value="training/strength_training">Strength training</option><option value="training/generic">Other training</option>
+        </select><button id="det-explore">Open in explorer</button>
         <a id="det-download"><button>Download .fit</button></a><button id="det-reparse">Re-parse</button>
         <button id="det-delete" class="danger">Delete file</button>
     </div>

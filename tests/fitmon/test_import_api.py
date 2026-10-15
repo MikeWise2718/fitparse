@@ -464,3 +464,31 @@ def test_no_hr_zone_bounds_without_a_max_hr(alice, import_file):
     import_file(alice.user_id, SAMPLE_POWER)                      # an indoor-trainer file: no profile
     sid = alice.get('/api/activities').get_json()['activities'][0]['id']
     assert alice.get(f'/api/sessions/{sid}').get_json()['hr_zones'] is None
+
+
+def test_changing_the_sport_moves_its_records_and_survives_a_reindex(app, home, alice, import_file):
+    """A ride the watch saved as a run set impossible running records. Correcting the sport
+    must take them out of running, keep the recorded sport for Restore, and outlive a re-index."""
+    import_file(alice.user_id)                                       # a run with GPS
+    sid = alice.get('/api/activities').get_json()['activities'][0]['id']
+    assert alice.get('/api/trends/best-efforts').get_json()['all_time']
+
+    assert alice.post(f'/api/sessions/{sid}/sport', json={'sport': 'cycling', 'sub_sport': 'nonsense'}).status_code == 400
+    r = alice.post(f'/api/sessions/{sid}/sport', json={'sport': 'cycling', 'sub_sport': 'gravel_cycling'}).get_json()
+    new_id = r['session_id']
+    assert (r['sport'], r['sub_sport']) == ('cycling', 'gravel_cycling')
+    d = alice.get(f'/api/sessions/{new_id}').get_json()
+    assert d['sport_override'] == {'recorded_sport': 'running', 'recorded_sub_sport': d['sport_override']['recorded_sub_sport']}
+    assert alice.get('/api/trends/best-efforts').get_json()['all_time'] == []    # no running records left
+
+    from app.models import FitFile
+    from app.services import importer
+    with app.app_context():
+        importer.reindex_file(home, FitFile.query.one())
+    after = alice.get('/api/activities').get_json()['activities'][0]
+    assert after['sport'] == 'cycling'
+
+    back = alice.post(f"/api/sessions/{after['id']}/sport", json={'sport': None}).get_json()
+    assert back['sport'] == 'running'
+    assert alice.get(f"/api/sessions/{back['session_id']}").get_json()['sport_override'] is None
+    assert alice.get('/api/trends/best-efforts').get_json()['all_time']

@@ -236,6 +236,25 @@ class SessionExclusion(db.Model):
     created_at = db.Column(db.DateTime, default=utcnow)
 
 
+class SessionSport(db.Model):
+    """A corrected sport: the watch recorded a bike ride as a run, or the wrong profile was picked.
+
+    Matters beyond the label - running best efforts, TSS (cycling only) and the plausibility
+    limits all follow the sport, so a ride saved as a run sets impossible running records.
+    Keyed by (file, leg) like SessionTrim so a re-index keeps it; the recorded sport is kept
+    alongside so the activity page can say what it was and undo it.
+    """
+    __tablename__ = 'session_sports'
+    file_id = db.Column(db.Integer, db.ForeignKey('files.id', ondelete='CASCADE'), primary_key=True)
+    idx = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    sport = db.Column(db.String(50), nullable=False)
+    sub_sport = db.Column(db.String(50))
+    recorded_sport = db.Column(db.String(50))
+    recorded_sub_sport = db.Column(db.String(50))
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+
 class Lap(db.Model):
     __tablename__ = 'laps'
     id = db.Column(db.Integer, primary_key=True)

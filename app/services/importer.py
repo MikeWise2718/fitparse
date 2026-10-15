@@ -12,7 +12,7 @@ from sqlalchemy import func
 
 from ..events import event_logger
 from ..models import (BestEffort, Device, FitFile, GarminActivity, Lap, Length, ProfileSnapshot,
-                      Record, SCHEMA_VERSION, Session, SessionExclusion, SessionTrim, StrengthSet,
+                      Record, SCHEMA_VERSION, Session, SessionExclusion, SessionSport, SessionTrim, StrengthSet,
                       ZoneTime, db)
 from ..settings import get_global_settings, get_user_settings, user_dir
 from . import metrics
@@ -99,8 +99,12 @@ def index_parsed(home: Path, file_row: FitFile, parsed: ParsedFile) -> None:
     # Manual trims and exclusions survive a re-index: keyed by (file, leg), not session id.
     trims = {t.idx: t.end_t for t in SessionTrim.query.filter_by(file_id=file_row.id).all()}
     excluded = {e.idx for e in SessionExclusion.query.filter_by(file_id=file_row.id).all()}
+    sports = {o.idx: o for o in SessionSport.query.filter_by(file_id=file_row.id).all()}
 
     for sess in parsed.sessions:
+        # Before anything is computed: best efforts, TSS and plausibility all follow the sport.
+        if sess['idx'] in sports:
+            sess['sport'], sess['sub_sport'] = sports[sess['idx']].sport, sports[sess['idx']].sub_sport
         if sess['idx'] in trims:
             metrics.apply_trim(sess, trims[sess['idx']])
         metrics.compute_session(sess, zones, load_model)

@@ -358,7 +358,10 @@ async function loadDetail(id) {
     $('det-legs').innerHTML = d.siblings.length > 1 ? d.siblings.map((x) => `<a data-leg="${x.id}" style="${x.id === s.id ? 'font-weight:700' : ''}">${esc(fmt.sport(x.sport, x.sub_sport))} ${fmt.dur(x.timer_s)}</a>`).join(' · ') : '';
     $('det-legs').querySelectorAll('a').forEach((a) => a.addEventListener('click', () => go('detail', a.dataset.leg)));
     $('det-banner').innerHTML = (d.file.parse_status !== 'ok' ? `<div class="banner">This file could only be read partly: <code>${esc(d.file.parse_error)}</code>. Totals and samples up to that point are shown.</div>` : '')
-        + (s.excluded ? '<div class="banner">Marked <b>not training</b>: kept here in full, but left out of load, volume, trends and records.</div>' : '');
+        + (s.excluded ? '<div class="banner">Marked <b>not training</b>: kept here in full, but left out of load, volume, trends and records.</div>' : '')
+        + (d.sport_override ? `<div class="banner">Recorded as <b>${esc(fmt.sport(d.sport_override.recorded_sport, d.sport_override.recorded_sub_sport))}</b>, changed to <b>${esc(fmt.sport(s.sport, s.sub_sport))}</b>. <button id="det-sport-undo">Restore</button></div>` : '');
+    if ($('det-sport-undo')) $('det-sport-undo').addEventListener('click', () => changeSport(null));
+    $('det-sport').value = '';
     $('det-exclude').textContent = s.excluded ? 'Count as training' : 'Not training';
     $('det-tiles').innerHTML = [
         tile('Distance', fmt.dist(s.distance_m, s.sport)), tile('Time', fmt.dur(s.timer_s), s.elapsed_s ? `elapsed ${fmt.dur(s.elapsed_s)}` : ''),
@@ -493,7 +496,7 @@ async function drawTrim(d) {
 
     const apply = async (end_t) => {
         const r = await api(`/api/sessions/${s.id}/trim`, {method: 'POST', json: {end_t}});
-        if (r._ok) { toast(end_t == null ? 'Trim removed.' : 'Trimmed.'); go('detail', r.session_id || s.id); reload(); }
+        if (r._ok) { toast(end_t == null ? 'Trim removed.' : 'Trimmed.'); openDetail(r.session_id || s.id); }
     };
     if ($('trim-accept')) $('trim-accept').addEventListener('click', () => apply(sug.end_t));
     if ($('trim-undo')) $('trim-undo').addEventListener('click', () => apply(null));
@@ -591,6 +594,15 @@ function initPanels() {
         p.querySelector('.dtitle').addEventListener('click', toggle);
         p.querySelector('.dgrip').addEventListener('pointerdown', (e) => startPanelDrag(e, p));
     });
+}
+
+// A re-index recreates session rows, so the activity usually comes back under a new id. Only
+// reload in place when it did not: reloading the old id as well would 404 and bounce to the list.
+function openDetail(id) { if (String(id) === String(state.arg)) reload(); else go('detail', id); }
+async function changeSport(sport, sub_sport) {
+    const s = state.session.session;
+    const r = await api(`/api/sessions/${s.id}/sport`, {method: 'POST', json: {sport, sub_sport}});
+    if (r._ok) { toast(sport ? `Now ${fmt.sport(r.sport, r.sub_sport)}.` : 'Sport restored.'); openDetail(r.session_id || s.id); loadSports(); }
 }
 
 // ---------------------------------------------------------------- activity playback
@@ -923,6 +935,17 @@ function wire() {
     $('det-trim').addEventListener('click', () => { const p = $('det-trim-panel');
         p.style.display = ''; if (p.classList.contains('collapsed')) setCollapsed(p, false);
         if (!$('det-trim-body').innerHTML) drawTrim(state.session); p.scrollIntoView({behavior: 'smooth'}); });
+    $('det-sport').addEventListener('change', (e) => { const v = e.target.value; if (!v) return;
+        const [sport, sub_sport] = v.split('/'), label = e.target.selectedOptions[0].textContent;
+        if (confirm(`Change this activity to ${label}? Records, load and trends are recomputed; Restore undoes it.`)) changeSport(sport, sub_sport);
+        else e.target.value = ''; });
+    $('pb-end').addEventListener('click', async () => {
+        const s = state.session.session, at = Math.round(pb.t);
+        if (!confirm(`End this activity at ${fmt.dur(pb.t - pb.t0)}? Everything after it is left out of the figures. Nothing is deleted; undo it under Recording length.`)) return;
+        pbStop();
+        const r = await api(`/api/sessions/${s.id}/trim`, {method: 'POST', json: {end_t: at}});
+        if (r._ok) { toast(`Ended at ${fmt.dur(pb.t - pb.t0)}.`); openDetail(r.session_id || s.id); }
+    });
     $('det-exclude').addEventListener('click', async () => {
         const s = state.session.session;
         const r = await api(`/api/sessions/${s.id}/exclude`, {method: 'POST', json: {excluded: !s.excluded}});
