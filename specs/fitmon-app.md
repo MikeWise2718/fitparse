@@ -477,9 +477,10 @@ queue, per-user Garmin egress) — explicitly not designed for.
 | 4.2 | Research remaining Garmin-private messages (140, 79, 141, 233 …) → `docs/garmin-unknown-messages-research.md` with citations, *before* coding against them | 4 | ☐ |
 | 4.3 | Surface what 4.1/4.2 unlock (recovery time, training status, device time-in-zone …) | 4 | ☐ |
 | 5.1 | Settings tab complete; mobile `@media (max-width: 480px)` pass | 5 Ship | ◐ written, not checked on a phone |
-| 5.2 | Deploy per `D:\hw\pokeflute\docs\deploying-a-new-munchlax-service.md`; `~/services-registry/fitmon.json`; `tools/deploy.sh`; launchd units for web + job worker | 5 | ◐ `deploy/` + `docs/fitmon-deploy.md` prepared, not run |
+| 5.2 | Deploy per `D:\hw\pokeflute\docs\deploying-a-new-munchlax-service.md`; `~/services-registry/fitmon.json`; `tools/deploy.sh`; launchd units for web + job worker | 5 | ✅ deployed 2026-09-21: web, worker, nightly sync and backup LaunchDaemons on munchlax; registry entry; see `docs/fitmon-deploy.md` |
 | 5.3 | (2026-09-19: no `tailscale` CLI on munchlax's SSH PATH or in `/Applications/Tailscale.app` - find or install it first) `tailscale serve` HTTPS front on munchlax, `ProxyFix`, `public_base_url`, always-`Secure` cookies; **verify a shared-node guest can reach it**; document guest onboarding in `docs/guest-onboarding.md` | 5 | ☐ |
-| 5.4 | Nightly `VACUUM INTO` DB backup + FIT originals rsync to snorlax (`tools/munchlax/`) | 5 | ◐ script prepared, not installed |
+| 5.4 | Nightly `VACUUM INTO` DB backup + FIT originals rsync to snorlax (`tools/munchlax/`) | 5 | ✅ installed 2026-09-21 (`deploy/run-fitmon-backup.sh`, 04:50; remounts snorlax itself) |
+| 6.1 | **Open-water swims: bad lap/length counting, GPS jumps.** Mike's diagnosis (2026-10-15): the laps are miscounted, possibly GPS-related. Found the same day: 18 open-water swims have samples far above any swim speed - up to 29 km/h (Lipari 2023-09-08), 117 samples over 4 km/h in one 49-min swim (Langen 2026-08-08). Diagnose from the raw FIT (lengths, laps, GPS, `enhanced_speed`), then correct - and feed the corrected activity back to Garmin Connect (re-upload a repaired FIT), which is why it is worth doing properly | 6 Data repair | ☐ later |
 Each task = one commit with a version bump, pushed.
 
 **Ordering:** S.1–S.4 run right after phase 1, *before* the analytics phases — CTL/ATL, trends and
