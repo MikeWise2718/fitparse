@@ -1,18 +1,29 @@
-"""Make fitmon's landing-page screenshot (app/static/screenshot.png) from invented data.
+"""Make fitmon's landing-page pictures (app/static/screenshot.png and app/static/screenshots/).
 
-    uv run --with playwright python tools/screenshot.py            # writes app/static/screenshot.png
+    uv run --with playwright --with pillow python tools/screenshot.py -af D:/somewhere/run.fit
     uv run --with playwright python tools/screenshot.py -sv        # just serve the demo instance to look around
 
-The picture is public - /api/screenshot needs no sign-in and the landing page shows it to
-guests - so it must never contain anyone's real activities or health numbers. This builds a
-throwaway fitmon home in a temp directory, seeds a demo user with a made-up training year
-(a build, a race taper, a rebuild), serves it on localhost, signs in with a password generated
-in this process and never shown, and captures the dashboard at 1280x800, en-GB, Europe/Berlin,
-with a "Demo data" badge on it so the picture cannot pass for anyone's real dashboard.
-Fleet rules: D:\\hw\\pokeflute\\docs\\service-screenshots.md. Re-run when the dashboard changes.
+The pictures are public - /api/screenshot(s) need no sign-in and the landing page shows them
+to guests. Three of them:
+
+1. The dashboard, and 3. the Trends tab, from an INVENTED training year (a build, a race
+   taper, a rebuild) for a "Demo athlete", stamped "Demo data" so they cannot pass for anyone's
+   real numbers.
+2. An animated playback of ONE REAL activity, given with -af and shown with Mike's consent
+   (2026-10-15): the marker running the route while the cursor sweeps the zone-coloured heart
+   rate. Its route passes the front door, so the first and last 500 m of the track are cut off
+   the map in the capture, the way Garmin's privacy zones work. The FIT file is never copied
+   into the repo. Without -af the existing animation is left as it is.
+
+Everything runs against a throwaway fitmon home in a temp directory, served on localhost and
+signed into with passwords generated in this process and never shown. 1280x800, en-GB,
+Europe/Berlin. Fleet rules: D:/hw/pokeflute/docs/service-screenshots.md. Re-run when the UI changes.
 """
 import argparse
 import hashlib
+import io
+import json
+import math
 import os
 import random
 import secrets
@@ -27,7 +38,12 @@ from rich.console import Console
 from rich_argparse import RichHelpFormatter
 
 REPO = Path(__file__).resolve().parents[1]
-DEFAULT_OUT = REPO / 'app' / 'static' / 'screenshot.png'
+STATIC = REPO / 'app' / 'static'
+DEFAULT_OUT = STATIC / 'screenshot.png'
+PLAYBACK_OUT = STATIC / 'screenshots' / '2-playback.webp'
+TRENDS_OUT = STATIC / 'screenshots' / '3-trends.png'
+PRIVACY_M = 500                  # route cut from each end of the real activity's map
+FRAMES, FRAME_MS = 64, 90        # the playback loop: about 6 s
 WIDTH, HEIGHT = 1280, 800
 UTC_OFFSET_S = 2 * 3600          # shown as Berlin summer time; the demo does not need DST
 console = Console()
@@ -142,10 +158,103 @@ def seed(user_id: int, today: date, rng: random.Random) -> int:
     return n
 
 
+def _metres(a, b) -> float:
+    """Haversine distance between two [lon, lat] points."""
+    (lon1, lat1), (lon2, lat2) = a, b
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    h = math.sin((p2 - p1) / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(math.radians(lon2 - lon1) / 2) ** 2
+    return 2 * 6371000 * math.asin(math.sqrt(h))
+
+
+def privacy_cut(track: dict, metres: float) -> dict:
+    """Drop the track's points within `metres` of where it starts and ends, wherever they fall
+    in the run (a loop passes its start again). Property arrays are cut the same way."""
+    coords = track['geometry']['coordinates']
+    if not coords:
+        return track
+    first, last = coords[0], coords[-1]
+    keep = [i for i, c in enumerate(coords) if _metres(c, first) > metres and _metres(c, last) > metres]
+    track['geometry']['coordinates'] = [coords[i] for i in keep]
+    track['properties'] = {k: [v[i] for i in keep] for k, v in track['properties'].items()}
+    return track
+
+
+DEMO_BADGE = """() => { const b = document.createElement('div'); b.textContent = 'Demo data';
+    Object.assign(b.style, {position: 'fixed', top: '60px', right: '16px', zIndex: 5000, padding: '6px 14px',
+        background: '#d98e04', color: '#fff', font: '600 15px system-ui, sans-serif', letterSpacing: '.04em',
+        borderRadius: '6px', boxShadow: '0 1px 4px rgba(0,0,0,.25)'});
+    document.body.appendChild(b); }"""
+
+
+# The invented year has session summaries but no second-by-second samples, so these Trends
+# panels would show as empty. A capture leaves them out; for a real user they hold data.
+TRENDS_NEEDS_SAMPLES = ['tr-power-chart', 'tr-best-table', 'tr-eff-chart', 'tr-strength-chart']
+
+
+def capture_still(browser, base: str, password: str, view: str, out: Path, hide: list | None = None) -> None:
+    """A demo-user tab, stamped "Demo data" (top half, so it survives the 16:10 crop)."""
+    context = browser.new_context(viewport={'width': WIDTH, 'height': HEIGHT}, locale='en-GB', timezone_id='Europe/Berlin')
+    context.request.post(f'{base}/api/auth/login', data={'username': 'demo', 'password': password})
+    page = context.new_page()
+    page.goto(f'{base}/#{view}', wait_until='networkidle')
+    page.wait_for_timeout(1500)                 # let the charts finish drawing
+    if hide:
+        page.evaluate("(ids) => ids.forEach((id) => { const el = document.getElementById(id); if (el) el.closest('.panel').style.display = 'none'; })", hide)
+        page.wait_for_timeout(800)              # the remaining charts resize into the space
+    page.evaluate(DEMO_BADGE)
+    page.mouse.move(WIDTH - 1, HEIGHT - 1)      # no hover state on anything
+    out.parent.mkdir(parents=True, exist_ok=True)
+    page.screenshot(path=str(out))
+    context.close()
+
+
+def capture_playback(browser, base: str, password: str, session_id: int, out: Path) -> int:
+    """Step the scrubber through the real activity and write the frames as an animated WebP.
+
+    The frame shows the playback bar, the map with the time-in-zone bars beside it, and the
+    zone-coloured heart-rate graph below. The loop starts a third of the way in, so the first
+    frame - the still for reduced-motion viewers - has the marker mid-route and the cursor
+    mid-graph."""
+    from PIL import Image
+    context = browser.new_context(viewport={'width': WIDTH, 'height': HEIGHT}, locale='en-GB', timezone_id='Europe/Berlin')
+    context.request.post(f'{base}/api/auth/login', data={'username': 'runner', 'password': password})
+    page = context.new_page()
+
+    def cut_track(route):
+        resp = route.fetch()
+        route.fulfill(response=resp, body=json.dumps(privacy_cut(resp.json(), PRIVACY_M)),
+                      headers={**resp.headers, 'content-type': 'application/json'})
+    page.route('**/api/sessions/*/track', cut_track)
+
+    page.goto(f'{base}/#detail/{session_id}', wait_until='networkidle')
+    page.wait_for_timeout(2000)
+    # Bring the map row up under the sticky header and playback bar.
+    page.evaluate("""() => { const bar = document.getElementById('pb-bar'), hdr = document.querySelector('header.top');
+        const map = document.getElementById('det-map-panel');
+        window.scrollTo(0, map.getBoundingClientRect().top + window.scrollY - hdr.offsetHeight - bar.offsetHeight - 22); }""")
+    page.wait_for_timeout(600)
+    page.mouse.move(WIDTH - 1, HEIGHT - 1)
+    t0, t1 = page.eval_on_selector('#pb-scrub', 'e => [Number(e.min), Number(e.max)]')
+    frames = []
+    for k in range(FRAMES):
+        f = (1 / 3 + k / FRAMES) % 1.0
+        page.eval_on_selector('#pb-scrub', "(e, t) => { e.value = t; e.dispatchEvent(new Event('input')); }", t0 + f * (t1 - t0))
+        page.wait_for_timeout(30)
+        frames.append(Image.open(io.BytesIO(page.screenshot())).convert('RGB'))
+    context.close()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    frames[0].save(out, save_all=True, append_images=frames[1:], duration=FRAME_MS, loop=0, quality=82, method=4)
+    return len(frames)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0], formatter_class=RichHelpFormatter)
-    parser.add_argument('-o', '--output', type=Path, default=DEFAULT_OUT, help=f'PNG to write (default: {DEFAULT_OUT.relative_to(REPO)})')
-    parser.add_argument('-vw', '--view', default='dashboard', help='which tab to capture (default: dashboard)')
+    parser.add_argument('-af', '--activity-fit', type=Path, help='a real FIT file for the playback animation (not copied anywhere)')
+    parser.add_argument('-lg', '--leg', type=int, default=None, help='which leg of a multisport file (default: the first run)')
+    parser.add_argument('-te', '--trim-end', type=int, help='end the activity at this many seconds, as fitmon\'s trim would')
+    parser.add_argument('-mh', '--max-hr', type=int, help='max HR for the zones of the real activity: the value fitmon uses for that date '
+                        '(one file alone may carry none, and then the heart rate is not zone-coloured)')
+    parser.add_argument('-on', '--owner-name', default='Mike', help='display name shown on the real activity (default: Mike)')
     parser.add_argument('-sv', '--serve', action='store_true', help='only serve the demo instance until Ctrl+C; capture nothing')
     parser.add_argument('-pt', '--port', type=int, default=0, help='port for the local server (default: any free one)')
     args = parser.parse_args()
@@ -155,52 +264,59 @@ def main() -> int:
     sys.path.insert(0, str(REPO))
     from werkzeug.serving import make_server
     from app import auth, create_app
+    from app.models import Session, SessionTrim, db
+    from app.services import importer
     from app.settings import save_user_settings
 
     home = Path(tempfile.mkdtemp(prefix='fitmon-demo-'))
     password = secrets.token_urlsafe(18)              # this process only; never printed or stored
     try:
         app = create_app(home)
+        session_id = None
         with app.app_context():
             user = auth.create_user('demo', password, role='user')
             user.display_name = 'Demo athlete'
             n = seed(user.id, date.today(), random.Random(7))
             save_user_settings(home, user.id, {'default_range_days': 365})
-        console.print(f'[green]Seeded[/green] {n} invented activities in {home}')
+            if args.activity_fit:
+                runner = auth.create_user('runner', password, role='user', display_name=args.owner_name)
+                if args.max_hr:
+                    save_user_settings(home, runner.id, {'zones': {'max_hr': args.max_hr}})
+                importer.import_bytes(home, runner.id, args.activity_fit.read_bytes(), args.activity_fit.name)
+                legs = Session.query.filter_by(user_id=runner.id).order_by(Session.idx).all()
+                leg = (next(s for s in legs if s.idx == args.leg) if args.leg is not None
+                       else next((s for s in legs if s.sport == 'running'), legs[0]))
+                if args.trim_end:
+                    db.session.add(SessionTrim(file_id=leg.file_id, idx=leg.idx, user_id=runner.id, end_t=args.trim_end))
+                    db.session.commit()
+                    importer.reindex_file(home, leg.file)
+                session_id = Session.query.filter_by(file_id=leg.file_id, idx=leg.idx).first().id
+        console.print(f'[green]Seeded[/green] {n} invented activities' + (f' and {args.activity_fit.name}' if args.activity_fit else ''))
 
         server = make_server('127.0.0.1', args.port, app, threaded=True)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         base = f'http://127.0.0.1:{server.server_port}'
         if args.serve:
-            console.print(f'Serving the demo instance at [bold]{base}[/bold] - user [bold]demo[/bold]; '
-                          'the password is random and not shown, so this is for anonymous pages and the API. Ctrl+C to stop.')
+            console.print(f'Serving the demo instance at [bold]{base}[/bold]; the passwords are random and not shown. Ctrl+C to stop.')
             threading.Event().wait()
 
         from playwright.sync_api import sync_playwright
         with sync_playwright() as p:
             browser = p.chromium.launch()
-            context = browser.new_context(viewport={'width': WIDTH, 'height': HEIGHT},
-                                          locale='en-GB', timezone_id='Europe/Berlin')
-            resp = context.request.post(f'{base}/api/auth/login', data={'username': 'demo', 'password': password})
-            if not resp.ok:
-                console.print(f'[red]Sign-in to the demo instance failed:[/red] {resp.status} {resp.text()[:200]}')
-                return 1
-            page = context.new_page()
-            page.goto(f'{base}/#{args.view}', wait_until='networkidle')
-            page.wait_for_timeout(1500)                 # let the charts finish drawing
-            # Say so on the picture itself: on the landing card it could pass for someone's real
-            # dashboard. Top half, so it survives the 16:10 crop, over the empty end of the filter bar.
-            page.evaluate("""() => { const b = document.createElement('div'); b.textContent = 'Demo data';
-                Object.assign(b.style, {position: 'fixed', top: '60px', right: '16px', zIndex: 5000, padding: '6px 14px',
-                    background: '#d98e04', color: '#fff', font: '600 15px system-ui, sans-serif', letterSpacing: '.04em',
-                    borderRadius: '6px', boxShadow: '0 1px 4px rgba(0,0,0,.25)'});
-                document.body.appendChild(b); }""")
-            page.mouse.move(WIDTH - 1, HEIGHT - 1)      # no hover state on anything
-            args.output.parent.mkdir(parents=True, exist_ok=True)
-            page.screenshot(path=str(args.output))
+            capture_still(browser, base, password, 'dashboard', DEFAULT_OUT)
+            capture_still(browser, base, password, 'trends', TRENDS_OUT, hide=TRENDS_NEEDS_SAMPLES)
+            written = [DEFAULT_OUT, TRENDS_OUT]
+            if session_id:
+                n_frames = capture_playback(browser, base, password, session_id, PLAYBACK_OUT)
+                written.append(PLAYBACK_OUT)
+                console.print(f'[green]Playback:[/green] {n_frames} frames')
+            else:
+                console.print('[yellow]No -af given:[/yellow] the playback animation was left as it is.')
             browser.close()
         server.shutdown()
-        console.print(f'[green]Wrote[/green] {args.output} ({args.output.stat().st_size // 1024} KB). Look at it before committing.')
+        for path in written:
+            console.print(f'[green]Wrote[/green] {path.relative_to(REPO)} ({path.stat().st_size // 1024} KB)')
+        console.print('Look at them before committing.')
         return 0
     finally:
         shutil.rmtree(home, ignore_errors=True)

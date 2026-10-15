@@ -145,6 +145,9 @@ function loadAbout() {
     // Collapsed by default; whether it was last left open is a per-user setting, so it follows
     // the person to another browser.
     const box = $('about-shot'); box.open = !!(state.settings && state.settings.about_screenshot_open);
+    if (!$('about-shots').children.length) api('/api/screenshots', {quiet: true}).then((d) => {
+        $('about-shots').innerHTML = (d.screenshots || []).map((x) => `<figure><a href="${esc(x.url)}" target="_blank" rel="noopener" title="Open full size">
+            <img src="${esc(x.url)}" alt="${esc(x.caption)}" loading="lazy"></a><figcaption class="muted">${esc(x.caption)}</figcaption></figure>`).join(''); });
     if (!box.dataset.wired) {
         box.dataset.wired = '1';
         box.addEventListener('toggle', () => { if (state.settings) state.settings.about_screenshot_open = box.open;

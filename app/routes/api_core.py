@@ -2,7 +2,7 @@ import socket
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Blueprint, current_app, g, jsonify, request, send_file
+from flask import Blueprint, current_app, g, jsonify, request, send_file, url_for
 
 from .. import __version__
 from ..settings import get_user_settings, save_user_settings
@@ -18,6 +18,24 @@ def ping():
         'timestamp': datetime.now(timezone.utc).isoformat(timespec='seconds'),
         'version': __version__,
     })
+
+
+# The landing card's gallery, in order; the first is also /api/screenshot. All made by
+# tools/screenshot.py: 1 and 3 from an invented training year, 2 from one real run that Mike
+# chose to show (2026-10-15), with the first and last 500 m of its route cut off the map.
+SCREENSHOTS = [
+    ('screenshot.png', 'Fitness, fatigue and form (demo data)'),
+    ('screenshots/2-playback.webp', 'Playback of a real 10 km run: route, zones, heart rate'),
+    ('screenshots/3-trends.png', 'Trends (demo data)'),
+]
+
+
+@core_bp.route('/api/screenshots')
+def screenshots():
+    """Fleet standard: no auth, no redirect, URLs on this app. Missing files are skipped."""
+    static = Path(current_app.static_folder)
+    return jsonify({'screenshots': [{'url': url_for('static', filename=f), 'caption': c}
+                                    for f, c in SCREENSHOTS if (static / f).exists()]})
 
 
 @core_bp.route('/api/screenshot')

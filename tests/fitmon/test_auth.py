@@ -228,8 +228,16 @@ def test_screenshot_is_public_png_without_redirect(app, alice):
     assert resp.data[:8] == b'\x89PNG\r\n\x1a\n'
     assert anon.get('/api/activities').status_code == 401        # the exemption is that one route only
 
-    page = alice.get('/').get_data(as_text=True)                   # the About tab shows the same image
-    assert 'id="about-shot"' in page and 'src="/api/screenshot"' in page
+    # The gallery: public too, every picture fetchable signed out, the first one is /api/screenshot.
+    shots = anon.get('/api/screenshots').get_json()['screenshots']
+    assert len(shots) >= 2 and all(x['caption'] for x in shots)
+    for shot in shots:
+        r = anon.get(shot['url'])
+        assert r.status_code == 200 and r.mimetype.startswith('image/'), shot
+    assert anon.get(shots[0]['url']).data == resp.data
+
+    page = alice.get('/').get_data(as_text=True)                   # the About tab shows the gallery
+    assert 'id="about-shot"' in page and 'id="about-shots"' in page
     assert alice.post('/api/settings', json={'about_screenshot_open': True}).get_json()['about_screenshot_open'] is True
 
 
