@@ -445,3 +445,22 @@ def test_running_economy_is_metres_per_beat_outdoor_only_in_the_average(app, ali
     assert pts[2]['rolling'] == round((pts[0]['m_per_beat'] + pts[2]['m_per_beat']) / 2, 3)
     assert [p['vo2max'] for p in pts] == [47.3, None, 43.8]
     assert pts[0]['pace_s_per_km'] == round(1000 / 2.60)
+
+
+def test_activity_detail_carries_hr_zone_bounds_matching_the_zone_times(home, alice, import_file):
+    """The HR chart colours each sample by zone; its bpm bounds must be the ones the importer
+    used for the time-in-zone bars, or the two would disagree."""
+    from app.services import metrics
+    from app.settings import save_user_settings
+    save_user_settings(home, alice.user_id, {'zones': {'max_hr': 175}})
+    import_file(alice.user_id)
+    sid = alice.get('/api/activities').get_json()['activities'][0]['id']
+    d = alice.get(f'/api/sessions/{sid}').get_json()
+    assert d['hr_zones'] == {'max_hr': 175, 'bounds_bpm': [round(b * 175) for b in metrics.HR_ZONE_BOUNDS]}
+    assert {z['zone'] for z in d['zones'] if z['kind'] == 'hr'} <= {0, 1, 2, 3, 4, 5}
+
+
+def test_no_hr_zone_bounds_without_a_max_hr(alice, import_file):
+    import_file(alice.user_id, SAMPLE_POWER)                      # an indoor-trainer file: no profile
+    sid = alice.get('/api/activities').get_json()['activities'][0]['id']
+    assert alice.get(f'/api/sessions/{sid}').get_json()['hr_zones'] is None

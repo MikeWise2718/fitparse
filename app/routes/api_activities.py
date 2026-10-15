@@ -7,7 +7,7 @@ from sqlalchemy import func
 
 from .. import auth
 from ..events import event_logger
-from ..models import (BestEffort, Device, FitFile, Lap, Length, RECORD_COLUMNS, Record, Session,
+from ..models import (BestEffort, Device, FitFile, Lap, Length, ProfileSnapshot, RECORD_COLUMNS, Record, Session,
                       SessionExclusion, SessionTrim, StrengthSet, ZoneTime, db)
 from ..services import importer, metrics
 
@@ -116,6 +116,23 @@ def sports():
     return jsonify({'sports': sorted(out.values(), key=lambda e: -e['count'])})
 
 
+
+def _hr_zone_bounds(sess) -> dict | None:
+    """Lower bound in bpm of HR zones 1..5 for this activity, so the chart can colour each sample
+    by zone. Resolved exactly as the importer does - this file's own watch profile first, then
+    the latest earlier one, with the user's overrides on top - so the colours agree with the
+    time-in-zone bars. Below zone 1 is zone 0."""
+    snap = ProfileSnapshot.query.filter_by(file_id=sess.file_id).order_by(ProfileSnapshot.at).first()
+    profile = {k: getattr(snap, k) for k in ('max_hr', 'resting_hr', 'threshold_hr', 'ftp')} if snap else {}
+    if snap:
+        profile['gender'] = snap.gender
+    zones = importer.resolve_zones(current_app.config['FITMON_HOME'], g.user.id, profile, at=sess.start_time)
+    max_hr = zones.get('max_hr')
+    if not max_hr:
+        return None
+    return {'max_hr': max_hr, 'bounds_bpm': [round(b * max_hr) for b in metrics.HR_ZONE_BOUNDS]}
+
+
 @activities_bp.route('/api/sessions/<int:session_id>')
 def session_detail(session_id):
     sess = auth.get_owned(Session, session_id)
@@ -135,6 +152,7 @@ def session_detail(session_id):
         'lengths': [row_dict(x) for x in sess.lengths],
         'sets': [row_dict(x) for x in sess.sets],
         'zones': [row_dict(x) for x in sorted(sess.zone_times, key=lambda z: (z.kind, z.zone))],
+        'hr_zones': _hr_zone_bounds(sess),
         'best_efforts': [row_dict(x, ['kind', 'window', 'value', 'offset_s'])
                          for x in sorted(sess.best_efforts, key=lambda b: (b.kind, b.window))],
         'devices': [row_dict(d) for d in devices],

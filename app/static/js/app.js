@@ -336,6 +336,10 @@ async function loadActivities(reset) {
 }
 
 // ---------------------------------------------------------------- activity detail
+// Heart-rate zone colours as Garmin uses them (grey, blue, green, orange, red); index 0 is
+// below zone 1. Shared by the zone-coloured HR chart and the time-in-zone bars.
+const HR_ZONE_COLORS = ['#c9ced6', '#9aa3ad', '#3b97f3', '#58b947', '#f5a623', '#e5413a'];
+const hrZoneOf = (bpm, bounds) => { let z = 0; bounds.forEach((lo, i) => { if (bpm >= lo) z = i + 1; }); return z; };
 const SERIES = [['hr', 'Heart rate (bpm)', '#c0392b'], ['speed', 'Speed', '#0b6bcb'], ['power', 'Power (W)', '#7d4cdb'],
                 ['cad', 'Cadence', '#d98e04'], ['alt', 'Altitude', '#6a994e'], ['temp', 'Temperature (°C)', '#17a2b8']];
 const DYNAMICS = {running: [['vo', 'Vertical oscillation (mm)'], ['vr', 'Vertical ratio (%)'], ['gct', 'Ground contact (ms)'], ['gct_bal', 'GCT balance (% left)'], ['step_len', 'Step length (mm)']],
@@ -381,7 +385,7 @@ async function loadDetail(id) {
     const zoneNames = {hr: 'Heart rate', power: 'Power'};
     $('det-zones').innerHTML = ['hr', 'power'].map((kind) => { const z = d.zones.filter((x) => x.kind === kind); if (!z.length) return '';
         const total = z.reduce((a, x) => a + x.seconds, 0);
-        return `<div class="muted" style="margin:6px 0 2px">${zoneNames[kind]}</div><div class="bars">` + z.map((x) => `<span>Z${x.zone}</span><span><span class="bar" style="display:block;width:${(x.seconds / total * 100).toFixed(1)}%;background:${kind === 'hr' ? '#c0392b' : '#7d4cdb'}"></span></span><span class="num">${fmt.dur(x.seconds)}</span>`).join('') + '</div>';
+        return `<div class="muted" style="margin:6px 0 2px">${zoneNames[kind]}</div><div class="bars">` + z.map((x) => `<span>Z${x.zone}</span><span><span class="bar" style="display:block;width:${(x.seconds / total * 100).toFixed(1)}%;background:${kind === 'hr' ? (HR_ZONE_COLORS[x.zone] || HR_ZONE_COLORS[5]) : '#7d4cdb'}"></span></span><span class="num">${fmt.dur(x.seconds)}</span>`).join('') + '</div>';
     }).join('') || '<span class="muted">No zone data (no max HR / FTP known for this date).</span>';
     $('det-best').innerHTML = d.best_efforts.length ? '<div class="row">' + d.best_efforts.map((b) => `<span class="tile" style="padding:6px 10px"><span class="label">${fmt.window(b.kind, b.window)}</span><br><b>${b.kind === 'power' ? fmt.num(b.value) + ' W' : fmt.dur(b.value)}</b></span>`).join('') + '</div>' : '<span class="muted">None for this activity.</span>';
 
@@ -413,6 +417,22 @@ function drawSeries() {
         if (key === 'alt' && statute()) { data = data.map((v) => v == null ? null : v * 3.28084); label = 'Altitude (ft)'; } else if (key === 'alt') label = 'Altitude (m)';
         if (key === 'cad') label = ['running', 'walking', 'hiking'].includes(s.sport) ? 'Cadence (steps/min)' : 'Cadence (rpm)';
         const id = `det-series-${key}`; wrap.insertAdjacentHTML('beforeend', `<div class="chart short"><canvas id="${id}"></canvas></div>`);
+        const hrz = key === 'hr' && state.session.hr_zones;
+        if (hrz) {
+            // Garmin's watch view: every sample is a column from the bottom up to its value, in
+            // its zone's colour. A filled line, coloured per segment by the zone at its end,
+            // draws exactly that and stays fast across thousands of samples.
+            const b = hrz.bounds_bpm, zc = (v) => HR_ZONE_COLORS[hrZoneOf(v, b)];
+            chart(id, {type: 'line', data: {labels: x, datasets: [{label, data, pointRadius: 0, borderWidth: 1, spanGaps: true, fill: 'start',
+                borderColor: HR_ZONE_COLORS[3], backgroundColor: HR_ZONE_COLORS[3],
+                segment: {borderColor: (c) => zc(c.p1.parsed.y), backgroundColor: (c) => zc(c.p1.parsed.y)}}]},
+                // No colour box in the legend: one swatch would claim a single colour for the line.
+                options: {plugins: {legend: {display: true, position: 'left', labels: {boxWidth: 0, boxHeight: 0}},
+                    tooltip: {callbacks: {label: (c) => `${c.parsed.y} bpm · zone ${hrZoneOf(c.parsed.y, b)}`}}},
+                    scales: {x: {ticks: {maxTicksLimit: 10}},
+                             y: {suggestedMin: Math.max(0, b[0] - 10), ticks: {callback: (v) => v}}}}});
+            return;
+        }
         chart(id, {type: 'line', data: {labels: x, datasets: [{label, data, borderColor: col, backgroundColor: col + '22', fill: key === 'alt', pointRadius: 0, borderWidth: 1.3, spanGaps: true}]},
             options: {plugins: {legend: {display: true, position: 'left', labels: {boxWidth: 8}}}, scales: {x: {ticks: {maxTicksLimit: 10}}}}});
     });
