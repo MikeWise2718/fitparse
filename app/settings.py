@@ -15,6 +15,10 @@ USER_DEFAULTS = {
     'load_model': 'auto',         # auto (TSS when power+FTP, else TRIMP) | trimp | tss
     'load_sports': [],            # empty = all sports count toward load
     'about_screenshot_open': False,   # About tab: the "On the landing page" section
+    # Activity page: panel order (data-panel keys; unknown or missing ones keep their default
+    # place) and which are collapsed. Per user, so the layout follows them between devices.
+    'detail_layout': {'order': [], 'collapsed': []},
+    'playback_speed': 60,         # activity playback: activity seconds per real second
     'zones': {                    # overrides; null = take from the FIT zones_target snapshots
         'max_hr': None, 'threshold_hr': None, 'resting_hr': None, 'ftp': None,
     },

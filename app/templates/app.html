@@ -78,20 +78,45 @@
         <h2><span id="det-title"></span> <small id="det-when"></small></h2>
         <div class="tiles" id="det-tiles" style="margin-bottom:0"></div>
     </div>
-    <div class="grid two">
-        <div class="panel" id="det-map-panel"><h2>Route
-            <select id="det-map-color"><option value="">plain</option><option value="hr">by heart rate</option><option value="speed">by speed</option><option value="power">by power</option></select></h2>
-            <div id="map"></div></div>
-        <div class="panel"><h2>Time in zones</h2><div id="det-zones"></div>
-            <h2 style="margin-top:14px">Best efforts</h2><div id="det-best"></div></div>
+    <!-- Playback: one clock for the map marker and a cursor on every graph. Sticky under the header. -->
+    <div class="pb-bar" id="pb-bar" hidden>
+        <button id="pb-play" class="primary" title="Play / pause (space)">▶</button>
+        <select id="pb-speed" title="Playback speed"><option value="10">10×</option><option value="30">30×</option>
+            <option value="60" selected>60×</option><option value="120">120×</option><option value="300">300×</option></select>
+        <input type="range" id="pb-scrub" min="0" max="1" step="1" value="0" aria-label="Activity time">
+        <span class="pb-time mono" id="pb-time">0:00</span>
+        <span class="pb-read" id="pb-read"></span>
     </div>
-    <div class="panel"><h2>Time series
-        <select id="det-xaxis"><option value="t">by time</option><option value="dist">by distance</option></select></h2>
-        <div id="det-series"></div></div>
-    <div class="panel" id="det-sport-panel"></div>
-    <div class="panel"><h2>Laps</h2><div class="scroll"><table id="det-laps"></table></div></div>
-    <div class="panel"><h2>Devices used</h2><table id="det-devices"></table></div>
-    <div class="panel" id="det-trim-panel"></div>
+
+    <!-- Movable, collapsible panels. data-panel is the key the saved layout uses; .wide spans both columns. -->
+    <div class="dpanels" id="det-panels">
+        <div class="panel dpanel" data-panel="map" id="det-map-panel">
+            <h2 class="dhead"><span class="dgrip" title="Drag to move">⠿</span><span class="dtitle">Route</span>
+                <select id="det-map-color"><option value="">plain</option><option value="hr">by heart rate</option><option value="speed">by speed</option><option value="power">by power</option></select>
+                <button class="dtoggle" title="Collapse">▾</button></h2>
+            <div class="dbody"><div id="map"></div></div></div>
+        <div class="panel dpanel" data-panel="zones">
+            <h2 class="dhead"><span class="dgrip" title="Drag to move">⠿</span><span class="dtitle">Time in zones</span><button class="dtoggle" title="Collapse">▾</button></h2>
+            <div class="dbody"><div id="det-zones"></div>
+                <h2 style="margin-top:14px">Best efforts</h2><div id="det-best"></div></div></div>
+        <div class="panel dpanel wide" data-panel="series">
+            <h2 class="dhead"><span class="dgrip" title="Drag to move">⠿</span><span class="dtitle">Time series</span>
+                <select id="det-xaxis"><option value="t">by time</option><option value="dist">by distance</option></select>
+                <button class="dtoggle" title="Collapse">▾</button></h2>
+            <div class="dbody"><div id="det-series"></div></div></div>
+        <div class="panel dpanel wide" data-panel="sport" id="det-sport-panel">
+            <h2 class="dhead"><span class="dgrip" title="Drag to move">⠿</span><span class="dtitle">Sport details</span><button class="dtoggle" title="Collapse">▾</button></h2>
+            <div class="dbody" id="det-sport-body"></div></div>
+        <div class="panel dpanel wide" data-panel="laps">
+            <h2 class="dhead"><span class="dgrip" title="Drag to move">⠿</span><span class="dtitle">Laps</span><button class="dtoggle" title="Collapse">▾</button></h2>
+            <div class="dbody"><div class="scroll"><table id="det-laps"></table></div></div></div>
+        <div class="panel dpanel wide" data-panel="devices">
+            <h2 class="dhead"><span class="dgrip" title="Drag to move">⠿</span><span class="dtitle">Devices used</span><button class="dtoggle" title="Collapse">▾</button></h2>
+            <div class="dbody"><table id="det-devices"></table></div></div>
+        <div class="panel dpanel wide" data-panel="trim" id="det-trim-panel" style="display:none">
+            <h2 class="dhead"><span class="dgrip" title="Drag to move">⠿</span><span class="dtitle">Recording length</span><button class="dtoggle" title="Collapse">▾</button></h2>
+            <div class="dbody" id="det-trim-body"></div></div>
+    </div>
     <div class="panel row">
         <button id="det-rename">Rename</button><button id="det-trim">Trim…</button><button id="det-exclude">Not training</button><button id="det-explore">Open in explorer</button>
         <a id="det-download"><button>Download .fit</button></a><button id="det-reparse">Re-parse</button>

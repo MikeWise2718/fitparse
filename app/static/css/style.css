@@ -48,6 +48,37 @@ main { padding: 16px; max-width: 1400px; margin: 0 auto; }
 .chart { position: relative; height: 260px; } .chart.tall { height: 340px; } .chart.short { height: 170px; }
 #map { height: 340px; border-radius: 6px; }
 
+/* Activity page: movable, collapsible panels. Map and zones are half width, the rest span both
+   columns; 'dense' lets a half-width panel fill the gap a move leaves. */
+.dpanels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-flow: row dense; gap: 14px; margin-bottom: 14px; }
+.dpanels > .dpanel { margin: 0; min-width: 0; align-self: start; }   /* a collapsed panel shrinks to its header */
+.dpanels > .dpanel.wide { grid-column: 1 / -1; }
+.dhead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dhead .dtoggle { margin-left: auto; border: 0; background: none; color: var(--muted); font-size: 15px; padding: 0 4px; cursor: pointer;
+                  transition: transform .15s ease; }
+.dgrip { color: var(--muted); cursor: grab; touch-action: none; user-select: none; font-size: 16px; line-height: 1; padding: 0 2px; }
+.dpanel.collapsed > .dbody { display: none; }
+.dpanel.collapsed > .dhead { margin-bottom: 0; }
+.dpanel.collapsed > .dhead .dtoggle { transform: rotate(-90deg); }
+.dpanel.dragging { opacity: .45; }
+.dpanel.drop-before { box-shadow: 0 -4px 0 0 var(--accent); }
+.dpanel.drop-after { box-shadow: 0 4px 0 0 var(--accent); }
+body.dragging-panel, body.dragging-panel * { cursor: grabbing !important; user-select: none; }
+
+/* Playback: sticky under the site header (its height is measured into --hdr-h). */
+.pb-bar { position: sticky; top: var(--hdr-h, 52px); z-index: 900; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+          background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin-bottom: 14px;
+          box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+.pb-bar[hidden] { display: none; }
+.pb-bar #pb-play { min-width: 40px; }
+.pb-bar #pb-scrub { flex: 1 1 260px; min-width: 160px; }
+.pb-time { min-width: 110px; font-variant-numeric: tabular-nums; }
+.pb-read { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.pb-cursor { position: absolute; width: 0; border-left: 2px solid var(--ink); pointer-events: none; z-index: 2; }
+.pb-cursor > span { position: absolute; top: 0; left: 4px; font-size: 11px; white-space: nowrap; background: var(--panel);
+                    color: var(--ink); padding: 0 4px; border-radius: 3px; box-shadow: 0 0 0 1px var(--line); }
+.pb-cursor.flip > span { left: auto; right: 4px; }
+
 table { border-collapse: collapse; width: 100%; }
 th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
 th { color: var(--muted); font-weight: 600; font-size: 12px; position: sticky; top: 0; background: var(--panel); }
@@ -86,7 +117,7 @@ progress { width: 100%; height: 10px; }
 .login { max-width: 360px; margin: 10vh auto; }
 .login h1 { font-size: 22px; display: flex; gap: 8px; align-items: center; }
 
-@media (max-width: 900px) { .grid.two, .grid.three { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .grid.two, .grid.three, .dpanels { grid-template-columns: 1fr; } }
 @media (max-width: 480px) {
     body { font-size: 13px; } main { padding: 8px; } header.top { padding: 6px 8px; gap: 8px; }
     header.top h1 { font-size: 17px; } nav.tabs a { padding: 5px 8px; }

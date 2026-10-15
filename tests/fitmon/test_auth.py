@@ -246,3 +246,17 @@ def test_display_name_can_be_changed_and_is_validated(app, alice, bob):
 
     with app.app_context():                   # nothing in the request can point it at someone else
         assert db.session.get(User, bob.user_id).display_name == 'bob'
+
+
+def test_activity_layout_and_playback_speed_are_saved_per_user(alice, bob):
+    """Panel order, collapsed panels and playback speed follow the person, not the browser."""
+    layout = {'order': ['series', 'map', 'zones', 'sport', 'laps', 'devices', 'trim'], 'collapsed': ['zones']}
+    saved = alice.post('/api/settings', json={'detail_layout': layout, 'playback_speed': 120}).get_json()
+    assert saved['detail_layout'] == layout and saved['playback_speed'] == 120
+    assert alice.get('/api/settings').get_json()['detail_layout'] == layout
+    assert bob.get('/api/settings').get_json()['detail_layout'] == {'order': [], 'collapsed': []}
+
+    page = alice.get('/').get_data(as_text=True)
+    for key in ('map', 'zones', 'series', 'sport', 'laps', 'devices', 'trim'):
+        assert f'data-panel="{key}"' in page          # every key the saved order may name exists
+    assert 'id="pb-bar"' in page and 'id="pb-scrub"' in page

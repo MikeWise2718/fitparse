@@ -134,6 +134,7 @@ function route() {
     document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.view === (name === 'detail' ? 'activities' : name)));
     $('filters').style.display = ['dashboard', 'activities', 'trends'].includes(name) ? '' : 'none';
     clearInterval(state.poll); state.poll = null;
+    if (name !== 'detail') pbStop();
     try { localStorage.setItem('fitmon.view', name); } catch (e) { /* private mode */ }
     VIEWS[name](arg);
 }
@@ -340,13 +341,18 @@ async function loadActivities(reset) {
 // below zone 1. Shared by the zone-coloured HR chart and the time-in-zone bars.
 const HR_ZONE_COLORS = ['#c9ced6', '#9aa3ad', '#3b97f3', '#58b947', '#f5a623', '#e5413a'];
 const hrZoneOf = (bpm, bounds) => { let z = 0; bounds.forEach((lo, i) => { if (bpm >= lo) z = i + 1; }); return z; };
+// Activity graphs share one time axis, so their plot areas must start at the same x: legends go
+// above the plot, and every y axis is the same width. Otherwise the playback cursor sits at a
+// different x on each graph for the same moment.
+const SERIES_Y = {afterFit: (sc) => { sc.width = 52; }};
+const SERIES_LEGEND = {display: true, position: 'top', align: 'start', labels: {boxWidth: 8, boxHeight: 8}};
 const SERIES = [['hr', 'Heart rate (bpm)', '#c0392b'], ['speed', 'Speed', '#0b6bcb'], ['power', 'Power (W)', '#7d4cdb'],
                 ['cad', 'Cadence', '#d98e04'], ['alt', 'Altitude', '#6a994e'], ['temp', 'Temperature (°C)', '#17a2b8']];
 const DYNAMICS = {running: [['vo', 'Vertical oscillation (mm)'], ['vr', 'Vertical ratio (%)'], ['gct', 'Ground contact (ms)'], ['gct_bal', 'GCT balance (% left)'], ['step_len', 'Step length (mm)']],
                   cycling: [['lrb', 'Left share of power (%)'], ['l_te', 'Torque effectiveness L (%)'], ['r_te', 'Torque effectiveness R (%)'], ['l_ps', 'Pedal smoothness L (%)'], ['r_ps', 'Pedal smoothness R (%)']]};
 async function loadDetail(id) {
     const d = await api(`/api/sessions/${id}`); if (!d._ok) { go('activities'); return; }
-    const s = d.session; state.session = d;
+    const s = d.session; state.session = d; state.track = null; applyPanelLayout();
     $('det-title').innerHTML = `${tag(s.sport, s.sub_sport)} ${esc(s.name || '')}`;
     $('det-when').textContent = `${fmt.when(s.start_time, d.file.utc_offset_s)} · ${d.file.product || d.file.manufacturer || ''} · ${d.file.name || ''}`;
     $('det-legs').innerHTML = d.siblings.length > 1 ? d.siblings.map((x) => `<a data-leg="${x.id}" style="${x.id === s.id ? 'font-weight:700' : ''}">${esc(fmt.sport(x.sport, x.sub_sport))} ${fmt.dur(x.timer_s)}</a>`).join(' · ') : '';
@@ -403,7 +409,7 @@ async function loadDetail(id) {
     const dyn = DYNAMICS[s.sport] || [];
     const fields = SERIES.map((x) => x[0]).concat(dyn.map((x) => x[0]), ['dist']);
     const rec = await api(`/api/sessions/${id}/records?downsample=1200&fields=${fields.join(',')}`);
-    state.records = rec.series; drawSeries(); drawSportPanel(d, rec.series, dyn);
+    state.records = rec.series; drawSeries(); drawSportPanel(d, rec.series, dyn); pbReset();
     drawMap(id, s.has_gps);
 }
 function drawSeries() {
@@ -427,19 +433,20 @@ function drawSeries() {
                 borderColor: HR_ZONE_COLORS[3], backgroundColor: HR_ZONE_COLORS[3],
                 segment: {borderColor: (c) => zc(c.p1.parsed.y), backgroundColor: (c) => zc(c.p1.parsed.y)}}]},
                 // No colour box in the legend: one swatch would claim a single colour for the line.
-                options: {plugins: {legend: {display: true, position: 'left', labels: {boxWidth: 0, boxHeight: 0}},
+                options: {plugins: {legend: {...SERIES_LEGEND, labels: {boxWidth: 0, boxHeight: 0}},
                     tooltip: {callbacks: {label: (c) => `${c.parsed.y} bpm · zone ${hrZoneOf(c.parsed.y, b)}`}}},
                     scales: {x: {ticks: {maxTicksLimit: 10}},
-                             y: {suggestedMin: Math.max(0, b[0] - 10), ticks: {callback: (v) => v}}}}});
+                             y: {...SERIES_Y, suggestedMin: Math.max(0, b[0] - 10)}}}});
             return;
         }
         chart(id, {type: 'line', data: {labels: x, datasets: [{label, data, borderColor: col, backgroundColor: col + '22', fill: key === 'alt', pointRadius: 0, borderWidth: 1.3, spanGaps: true}]},
-            options: {plugins: {legend: {display: true, position: 'left', labels: {boxWidth: 8}}}, scales: {x: {ticks: {maxTicksLimit: 10}}}}});
+            options: {plugins: {legend: SERIES_LEGEND}, scales: {x: {ticks: {maxTicksLimit: 10}}, y: SERIES_Y}}});
     });
     if (!wrap.children.length) wrap.innerHTML = '<span class="muted">This activity has no sample data.</span>';
+    pbHookCharts();
 }
 function drawSportPanel(d, r, dyn) {
-    const s = d.session, panel = $('det-sport-panel'); let html = '';
+    const s = d.session, panel = $('det-sport-panel'), body = $('det-sport-body'); let html = '';
     if (d.lengths.length) {
         const active = d.lengths.filter((l) => l.length_type === 'active'), strokes = {};
         active.forEach((l) => { strokes[l.stroke || 'unknown'] = (strokes[l.stroke || 'unknown'] || 0) + 1; });
@@ -448,7 +455,7 @@ function drawSportPanel(d, r, dyn) {
     if (d.sets.length) html += '<h2>Strength sets</h2><table id="det-sets"></table>';
     const have = dyn.filter(([k]) => r[k] && r[k].some((v) => v != null));
     if (have.length) html += `<h2>${s.sport === 'running' ? 'Running dynamics' : 'Pedalling'}</h2><div class="tiles">` + have.map(([k, label]) => { const v = r[k].filter((x) => x != null); return tile(label, fmt.num(v.reduce((a, b) => a + b, 0) / v.length, 1)); }).join('') + '</div><div id="det-dyn"></div>';
-    panel.style.display = html ? '' : 'none'; panel.innerHTML = html;
+    panel.style.display = html ? '' : 'none'; body.innerHTML = html;
     if (d.lengths.length) { const act = d.lengths.filter((l) => l.length_type === 'active');
         chart('det-swim-chart', {data: {labels: act.map((l, i) => i + 1), datasets: [{type: 'bar', label: 'seconds', data: act.map((l) => l.timer_s), backgroundColor: '#17a2b8aa'},
             {type: 'line', label: 'SWOLF', data: act.map((l) => l.swolf), borderColor: '#e4572e', pointRadius: 0, yAxisID: 'y1'}, {type: 'line', label: 'strokes', data: act.map((l) => l.strokes), borderColor: '#7d4cdb', pointRadius: 0, yAxisID: 'y1'}]},
@@ -457,17 +464,18 @@ function drawSportPanel(d, r, dyn) {
         table('det-sets', [{label: '#', get: (x) => active.indexOf(x) + 1}, {label: 'Exercise', get: (x) => fmt.sport(x.category)}, {label: 'Reps', num: 1, get: (x) => x.reps}, {label: 'Weight', num: 1, get: (x) => x.weight_kg ? fmt.weight(x.weight_kg) : 'body'},
             {label: 'Volume', num: 1, get: (x) => x.reps && x.weight_kg ? fmt.num(x.reps * x.weight_kg) : ''}, {label: 'Time', num: 1, get: (x) => fmt.dur(x.duration_s)}], active); }
     have.forEach(([k, label]) => { const id = `det-series-dyn-${k}`; $('det-dyn').insertAdjacentHTML('beforeend', `<div class="chart short"><canvas id="${id}"></canvas></div>`);
-        chart(id, {type: 'line', data: {labels: r.t.map((t) => fmt.dur(t)), datasets: [{label, data: r[k], borderColor: '#2a9d8f', pointRadius: 0, borderWidth: 1.2, spanGaps: true}]}, options: {plugins: {legend: {position: 'left', labels: {boxWidth: 8}}}, scales: {x: {ticks: {maxTicksLimit: 10}}}}}); });
+        chart(id, {type: 'line', data: {labels: r.t.map((t) => fmt.dur(t)), datasets: [{label, data: r[k], borderColor: '#2a9d8f', pointRadius: 0, borderWidth: 1.2, spanGaps: true}]}, options: {plugins: {legend: SERIES_LEGEND}, scales: {x: {ticks: {maxTicksLimit: 10}}, y: SERIES_Y}}}); });
+    pbHookCharts();
 }
 async function drawTrim(d) {
-    const panel = $('det-trim-panel'), s = d.session;
+    const panel = $('det-trim-panel'), body = $('det-trim-body'), s = d.session;
     const info = await api(`/api/sessions/${s.id}/trim/suggest`, {quiet: true});
     state.trim = info;
     const sug = info.suggestion;
     // Only speak up when there is something to say: a live trim, or a credible suggestion.
     if (!sug && info.current == null && !s.trimmed_s) { panel.style.display = 'none'; return; }
     panel.style.display = '';
-    let html = '<h2>Recording length</h2>';
+    let html = '';
     if (info.current != null) {
         html += `<div class="banner good">Trimmed to <b>${fmt.dur(info.current)}</b> — figures above are computed to there.
             The file itself is untouched. <button id="trim-undo">Undo trim</button></div>`;
@@ -481,7 +489,7 @@ async function drawTrim(d) {
         value="${fmt.dur(info.current ?? sug?.end_t ?? info.last_t)}" placeholder="h:mm:ss"></label>
         <button id="trim-set">Apply</button>
         <span class="muted">Nothing is deleted — this only changes what the figures are computed over.</span></div>`;
-    panel.innerHTML = html;
+    body.innerHTML = html;
 
     const apply = async (end_t) => {
         const r = await api(`/api/sessions/${s.id}/trim`, {method: 'POST', json: {end_t}});
@@ -521,7 +529,151 @@ function paintTrack() {
     if (vals && vals.some((v) => v != null)) { const clean = vals.filter((v) => v != null).sort((a, b) => a - b), lo = clean[Math.floor(clean.length * .05)], hi = clean[Math.floor(clean.length * .95)] || lo + 1;
         for (let i = 1; i < pts.length; i++) { const f = Math.max(0, Math.min(1, ((vals[i] ?? lo) - lo) / (hi - lo || 1))); L.polyline([pts[i - 1], pts[i]], {color: `hsl(${(1 - f) * 220}, 85%, 45%)`, weight: 4}).addTo(group); } }
     else L.polyline(pts, {color: '#0b6bcb', weight: 4}).addTo(group);
-    state.trackLayer = group.addTo(state.map); setTimeout(() => { state.map.invalidateSize(); if (pts.length) state.map.fitBounds(group.getBounds(), {padding: [16, 16]}); }, 50);
+    L.polyline(pts, {weight: 18, opacity: 0}).addTo(group);          // click target, not drawn
+    group.on('click', (e) => { let best = 0, bd = Infinity;
+        pts.forEach(([la, lo], k) => { const dd = (la - e.latlng.lat) ** 2 + (lo - e.latlng.lng) ** 2; if (dd < bd) { bd = dd; best = k; } });
+        pbSet(track.properties.t[best]); });
+    state.trackLayer = group.addTo(state.map); setTimeout(() => { state.map.invalidateSize(); if (pts.length) state.map.fitBounds(group.getBounds(), {padding: [16, 16]}); pbRender(); }, 50);
+}
+
+// ---------------------------------------------------------------- activity panels
+// Movable, collapsible panels. Order and collapsed state are a per-user setting (server-side),
+// so the layout follows the person to another device. Panels missing from a saved order -
+// a new one added later - keep their default place.
+const DEFAULT_PANEL_ORDER = ['map', 'zones', 'series', 'sport', 'laps', 'devices', 'trim'];
+function applyPanelLayout() {
+    const box = $('det-panels'), lay = (state.settings && state.settings.detail_layout) || {};
+    const order = (lay.order || []).filter((k, i, a) => DEFAULT_PANEL_ORDER.includes(k) && a.indexOf(k) === i);
+    DEFAULT_PANEL_ORDER.forEach((k, i) => { if (!order.includes(k)) order.splice(Math.min(i, order.length), 0, k); });
+    order.forEach((k) => { const p = box.querySelector(`.dpanel[data-panel="${k}"]`); if (p) box.appendChild(p); });
+    box.querySelectorAll('.dpanel').forEach((p) => p.classList.toggle('collapsed', (lay.collapsed || []).includes(p.dataset.panel)));
+}
+function savePanelLayout() {
+    const box = $('det-panels');
+    const layout = {order: [...box.querySelectorAll('.dpanel')].map((p) => p.dataset.panel),
+                    collapsed: [...box.querySelectorAll('.dpanel.collapsed')].map((p) => p.dataset.panel)};
+    if (state.settings) state.settings.detail_layout = layout;
+    api('/api/settings', {method: 'POST', json: {detail_layout: layout}, quiet: true});
+}
+function panelShown(p) {
+    // A chart or map laid out while hidden has no size; give them one now.
+    if (p.dataset.panel === 'map' && state.map) setTimeout(() => state.map.invalidateSize(), 30);
+    Object.values(state.charts).forEach((c) => { if (c && c.canvas && p.contains(c.canvas)) c.resize(); });
+    setTimeout(pbRender, 40);
+}
+function setCollapsed(p, collapsed) { p.classList.toggle('collapsed', collapsed); if (!collapsed) panelShown(p); savePanelLayout(); }
+function startPanelDrag(e, panel) {
+    // Pointer events rather than HTML drag-and-drop, which does nothing on touch screens.
+    e.preventDefault();
+    const box = $('det-panels'), grip = e.currentTarget; let target = null, after = false;
+    grip.setPointerCapture(e.pointerId);
+    panel.classList.add('dragging'); document.body.classList.add('dragging-panel');
+    const clear = () => box.querySelectorAll('.drop-before, .drop-after').forEach((x) => x.classList.remove('drop-before', 'drop-after'));
+    const move = (ev) => {
+        if (ev.clientY < 70) window.scrollBy(0, -14); else if (ev.clientY > innerHeight - 50) window.scrollBy(0, 14);
+        const over = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.dpanel');
+        clear(); target = null;
+        if (!over || over === panel || !box.contains(over)) return;
+        const r = over.getBoundingClientRect(); after = ev.clientY > r.top + r.height / 2;
+        over.classList.add(after ? 'drop-after' : 'drop-before'); target = over;
+    };
+    const up = () => {
+        grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up);
+        clear(); panel.classList.remove('dragging'); document.body.classList.remove('dragging-panel');
+        if (target) { target.insertAdjacentElement(after ? 'afterend' : 'beforebegin', panel); panelShown(panel); savePanelLayout(); }
+    };
+    grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
+}
+function initPanels() {
+    $('det-panels').querySelectorAll('.dpanel').forEach((p) => {
+        const toggle = () => setCollapsed(p, !p.classList.contains('collapsed'));
+        p.querySelector('.dtoggle').addEventListener('click', toggle);
+        p.querySelector('.dtitle').addEventListener('click', toggle);
+        p.querySelector('.dgrip').addEventListener('pointerdown', (e) => startPanelDrag(e, p));
+    });
+}
+
+// ---------------------------------------------------------------- activity playback
+// One clock - activity time, the records' t in seconds - drives the map marker, a cursor on
+// every graph and the readout in the bar. Clicking a graph or the route moves the clock there.
+const pb = {t: 0, t0: 0, t1: 0, playing: false, raf: null, last: 0, marker: null};
+function nearestIdx(arr, t) {
+    let lo = 0, hi = arr.length - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (arr[mid] < t) lo = mid + 1; else hi = mid; }
+    return lo > 0 && Math.abs(arr[lo - 1] - t) <= Math.abs(arr[lo] - t) ? lo - 1 : lo;
+}
+const pbVal = (v) => (Math.abs(v) >= 100 ? Math.round(v) : Math.round(v * 10) / 10);
+function pbReset() {
+    pbStop();
+    const t = state.records && state.records.t, has = !!(t && t.length > 1);
+    $('pb-bar').hidden = !has;
+    if (pb.marker) { pb.marker.remove(); pb.marker = null; }
+    if (!has) return;
+    pb.t0 = t[0]; pb.t1 = t[t.length - 1]; pb.t = pb.t0;
+    const sc = $('pb-scrub'); sc.min = pb.t0; sc.max = pb.t1; sc.value = pb.t0;
+    $('pb-speed').value = String((state.settings && state.settings.playback_speed) || 60);
+    if (!$('pb-speed').value) $('pb-speed').value = '60';
+    pbRender();
+}
+function pbSet(t) { if ($('pb-bar').hidden) return; pb.t = Math.max(pb.t0, Math.min(pb.t1, t)); pbRender(); }
+function pbCursor(c, i) {
+    const wrap = c.canvas.parentNode, a = c.chartArea; let el = wrap.querySelector('.pb-cursor');
+    if (!a || !wrap.offsetParent) return;                       // collapsed or not laid out yet
+    if (!el) { el = document.createElement('div'); el.className = 'pb-cursor'; el.innerHTML = '<span></span>'; wrap.appendChild(el); }
+    const x = c.scales.x.getPixelForValue(i), v = c.data.datasets[0].data[i];
+    el.style.left = `${x}px`; el.style.top = `${a.top}px`; el.style.height = `${a.bottom - a.top}px`;
+    el.classList.toggle('flip', x > a.right - 80);
+    el.firstChild.textContent = v == null ? '–' : pbVal(v);
+}
+function pbRender() {
+    const r = state.records; if (!r || !r.t || $('pb-bar').hidden || !state.session) return;
+    const i = nearestIdx(r.t, pb.t), s = state.session.session, at = (k) => (r[k] ? r[k][i] : null);
+    $('pb-scrub').value = pb.t;
+    $('pb-time').textContent = `${fmt.dur(pb.t - pb.t0)} / ${fmt.dur(pb.t1 - pb.t0)}`;
+    $('pb-read').textContent = [at('hr') != null ? `${Math.round(at('hr'))} bpm` : '', at('speed') ? fmt.speed(at('speed'), s.sport) : '',
+        at('power') != null ? `${Math.round(at('power'))} W` : '', at('dist') != null ? fmt.dist(at('dist'), s.sport) : '',
+        at('alt') != null ? fmt.elev(at('alt')) : ''].filter(Boolean).join(' · ');
+    Object.entries(state.charts).forEach(([id, c]) => { if (c && id.startsWith('det-series-')) pbCursor(c, i); });
+    const tr = state.track;
+    // Not before the map has a view: Leaflet cannot place a layer on a map with no centre yet.
+    if (tr && state.map && state.map._loaded && tr.properties.t.length) {
+        const [lon, lat] = tr.geometry.coordinates[nearestIdx(tr.properties.t, pb.t)];
+        if (!pb.marker) pb.marker = L.circleMarker([lat, lon], {radius: 7, color: '#fff', weight: 2, fillColor: '#1d2330', fillOpacity: 1, interactive: false}).addTo(state.map);
+        else pb.marker.setLatLng([lat, lon]);
+        if (pb.playing && !state.map.getBounds().pad(-0.15).contains([lat, lon])) state.map.panTo([lat, lon], {animate: false});
+    }
+}
+function pbHookCharts() {
+    // Click a graph to put the clock there. Category axes: the pixel maps to a sample index.
+    Object.entries(state.charts).forEach(([id, c]) => {
+        if (!c || !id.startsWith('det-series-') || c.canvas.dataset.pb) return;
+        c.canvas.dataset.pb = '1'; c.canvas.style.cursor = 'crosshair';
+        c.canvas.addEventListener('click', (e) => { const r = state.records, i = c.scales.x.getValueForPixel(e.offsetX);
+            if (r && i != null) pbSet(r.t[Math.max(0, Math.min(r.t.length - 1, Math.round(i)))]); });
+    });
+    pbRender();
+}
+function pbTick(now) {
+    if (!pb.playing) return;
+    pb.t += (now - pb.last) / 1000 * Number($('pb-speed').value); pb.last = now;
+    if (pb.t >= pb.t1) { pb.t = pb.t1; pbRender(); pbStop(); return; }
+    pbRender(); pb.raf = requestAnimationFrame(pbTick);
+}
+function pbPlay() { if (pb.t >= pb.t1) pb.t = pb.t0; pb.playing = true; $('pb-play').textContent = '⏸'; pb.last = performance.now(); pb.raf = requestAnimationFrame(pbTick); }
+function pbStop() { pb.playing = false; if (pb.raf) cancelAnimationFrame(pb.raf); pb.raf = null; if ($('pb-play')) $('pb-play').textContent = '▶'; }
+function initPlayback() {
+    // The bar sticks just under the site header, whatever height that wraps to.
+    const hdr = document.querySelector('header.top'), fit = () => document.documentElement.style.setProperty('--hdr-h', `${hdr.offsetHeight}px`);
+    fit(); window.addEventListener('resize', () => { fit(); setTimeout(pbRender, 60); });
+    $('pb-play').addEventListener('click', () => (pb.playing ? pbStop() : pbPlay()));
+    $('pb-scrub').addEventListener('input', (e) => pbSet(Number(e.target.value)));
+    $('pb-speed').addEventListener('change', (e) => { const v = Number(e.target.value); if (state.settings) state.settings.playback_speed = v;
+        api('/api/settings', {method: 'POST', json: {playback_speed: v}, quiet: true}); });
+    document.addEventListener('keydown', (e) => {
+        if (state.view !== 'detail' || $('pb-bar').hidden || e.target.closest('input, select, textarea, button')) return;
+        if (e.key === ' ') { e.preventDefault(); if (pb.playing) pbStop(); else pbPlay(); }
+        else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); pbSet(pb.t + (e.key === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? 60 : 10)); }
+    });
 }
 
 // ---------------------------------------------------------------- trends
@@ -757,6 +909,7 @@ async function loadSports() { const d = await api('/api/sports'), cur = $('flt-s
 
 // ---------------------------------------------------------------- wiring
 function wire() {
+    initPanels(); initPlayback();
     document.querySelectorAll('#tabs a').forEach((a) => a.addEventListener('click', () => go(a.dataset.view)));
     document.body.addEventListener('click', (ev) => { const a = ev.target.closest('[data-goto]'); if (a) go(a.dataset.goto); });
     ['flt-from', 'flt-to', 'flt-sport'].forEach((id) => $(id).addEventListener('change', () => { if (id !== 'flt-sport') state.rangeNote = ''; showNote(); reload(); }));
@@ -768,7 +921,8 @@ function wire() {
     $('act-excluded').addEventListener('change', () => loadActivities(true)); $('act-more').addEventListener('click', () => { state.act.offset = state.act.rows.length; loadActivities(false); });
     $('det-xaxis').addEventListener('change', drawSeries); $('det-map-color').addEventListener('change', paintTrack);
     $('det-trim').addEventListener('click', () => { const p = $('det-trim-panel');
-        p.style.display = ''; if (!p.innerHTML) drawTrim(state.session); p.scrollIntoView({behavior: 'smooth'}); });
+        p.style.display = ''; if (p.classList.contains('collapsed')) setCollapsed(p, false);
+        if (!$('det-trim-body').innerHTML) drawTrim(state.session); p.scrollIntoView({behavior: 'smooth'}); });
     $('det-exclude').addEventListener('click', async () => {
         const s = state.session.session;
         const r = await api(`/api/sessions/${s.id}/exclude`, {method: 'POST', json: {excluded: !s.excluded}});
