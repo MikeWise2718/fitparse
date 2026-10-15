@@ -479,14 +479,16 @@ async function drawTrim(d) {
 async function drawMap(id, hasGps) {
     $('det-map-panel').style.display = hasGps ? '' : 'none'; if (!hasGps) return;
     const track = await api(`/api/sessions/${id}/track`); state.track = track;
-    // NOT tile.openstreetmap.org: those are volunteer servers whose usage policy forbids
-    // unidentified apps, and they answer with "Access blocked" tiles. CARTO serves the same
-    // OSM data from a CDN that permits this, and its muted basemap keeps the track readable.
+    // OpenStreetMap's own tiles. Their usage policy requires a site to identify itself with a
+    // Referer, and blocks requests without one ("Access blocked" tiles). This page sends
+    // Referrer-Policy: same-origin, which strips it - that, not OSM, broke the map before. The
+    // tile images alone send the origin (no path). Light use by a few people is within the policy.
+    // CARTO's basemaps, used meanwhile, began requiring an API key in October 2026.
     if (!state.map) {
         state.map = L.map('map');
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-            maxZoom: 20, subdomains: 'abcd',
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19, referrerPolicy: 'strict-origin-when-cross-origin',
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         }).addTo(state.map);
     }
     paintTrack();
