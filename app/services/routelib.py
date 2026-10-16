@@ -33,8 +33,8 @@ SUGGEST_SHARE = 0.9
 # plus a kilometre was once grouped with that loop and offered as "11 km, 5 times". GPS puts
 # repeats of one route within 1-2 % of each other.
 SUGGEST_LENGTH = 0.05
-SUGGEST_MIN_RUNS = 3
-SUGGEST_PER_FAMILY = 10      # runs and rides each get their own share of the list
+SUGGEST_MIN_RUNS = 2          # twice over the same ground is a route (Mike, 2026-10-16)
+SUGGEST_PER_FAMILY = 50      # a backstop; the page shows the first few and a "Show all"
 MAX_PLAN_POINTS = 40000
 
 
@@ -480,7 +480,7 @@ def _suggestions(user_id: int) -> list:
                     'distance_m': round(rep.distance_m), 'last': c['members'][0][1],
                     'first': c['members'][-1][1], 'kind': _kind(c['pts']),
                     'preview': geo.simplify(c['pts'], 20.0)})
-    out.sort(key=lambda s: -s['count'])
+    out.sort(key=lambda s: (-s['count'], -s['last'].timestamp() if s['last'] else 0))
     kept, per = [], {}
     for x in out:
         family = FAMILY.get(x['sport'], 'foot')

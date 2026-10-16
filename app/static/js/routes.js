@@ -122,10 +122,19 @@ async function drawLibraryLines(routes) {
     }
 }
 function hotLine(id, on) { const l = lib.layers[id]; if (l) { l.setStyle({weight: on ? 6 : 3, opacity: on ? 1 : 0.75}); if (on) l.bringToFront(); } }
+const FAMILY = {run: 'foot', hike: 'foot', road: 'bike', gravel: 'bike', mtb: 'bike', bike: 'bike'};
+const SUGGEST_SHOWN = 8;
 async function loadSuggestions() {
     const d = await api('/api/routes/suggestions', {quiet: true});
-    const list = d.suggestions || [];
-    $('rt-suggest-panel').style.display = list.length ? '' : 'none';
+    // The kind picked above the list filters these too: a runner asking for runs sees no rides.
+    const kind = $('rt-sport').value;
+    const all = (d.suggestions || []).filter((s) => !kind || FAMILY[s.sport] === FAMILY[kind]);
+    const list = lib.allSuggestions ? all : all.slice(0, SUGGEST_SHOWN);
+    $('rt-suggest-panel').style.display = all.length ? '' : 'none';
+    const more = $('rt-suggest-more');
+    more.hidden = all.length <= SUGGEST_SHOWN;
+    more.textContent = lib.allSuggestions ? 'Show fewer' : `Show all ${all.length}`;
+    more.onclick = () => { lib.allSuggestions = !lib.allSuggestions; loadSuggestions(); };
     $('rt-suggest').innerHTML = list.map((s) => `<div class="rt-sugg" data-key="${esc(s.key)}">
         <b>${km(s.distance_m)} ${esc(SPORTS[s.sport] || '')} <span class="muted">${esc(KIND_LABELS[s.kind] || '')}</span></b>
         <div class="muted">${s.count} times · ${esc(fmt.day(s.first))} to ${esc(fmt.day(s.last))}</div>

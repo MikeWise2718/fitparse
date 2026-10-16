@@ -334,5 +334,8 @@ Each is cheap to change later.
   ≥ 90 % the same ground both ways, at most ten groups each for runs and rides. With 12 % and
   85 % across all sports, an 11 km run (a 9.9 km loop plus a kilometre) was grouped with that loop
   as "11 km, 5 times". The gravel groups then pushed it off the list.
+- **Twice is a route** (Mike, 2026-10-16; the design said three). On his data that raised the
+  suggestions from 12 run and 17 ride groups to 20 and 28. The page shows the eight most
+  repeated with a "Show all", filtered by the kind picked above the list.
 - The run profile is BRouter's `hiking-mountain`, untuned. §10's comparison against real runs is
   still to do.
