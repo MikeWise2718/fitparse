@@ -457,22 +457,22 @@ queue, per-user Garmin egress) — explicitly not designed for.
 | 1.3 | Tolerant `partial` import for corrupt files (tri file = test case; keep messages read before the error) | 1 | ✅ |
 | 1.4 | Importer: `import_bytes()` core, hash dedupe, recursive scan, zip, job status; `fitmon-import` CLI (rich, `-d/--dir`, `-v`) | 1 | ✅ |
 | 1.5 | Tests: parser against `tests/files/` + `mike/*.fit`; importer dedupe; partial file | 1 | ✅ 63 tests |
-| 1.6 | Import all of `D:\fit` (111 files + 14 zips); sanity-check counts against the survey | 1 | ◐ verified on a scratch instance (103 files → 115 sessions, 270k records, 23 MB, 47 s); real import waits for Mike's account |
-| S.1 | Live smoke test on spearow: `garminconnect` pinned, login + MFA + token reload under the 0.3.x flow (fix the `client.garth` call), list 5, download 1. Record findings in `docs/garmin-connect-sync-research.md` | S Sync | ☐ needs Mike's Garmin login - **the sync has never talked to Garmin** |
+| 1.6 | Import all of `D:\fit` (111 files + 14 zips); sanity-check counts against the survey | 1 | ✅ superseded by the Garmin back-fill: 1,209 activities imported on munchlax (checked 2026-10-16) |
+| S.1 | Live smoke test on spearow: `garminconnect` pinned, login + MFA + token reload under the 0.3.x flow (fix the `client.garth` call), list 5, download 1. Record findings in `docs/garmin-connect-sync-research.md` | S Sync | ✅ live: connected, syncing nightly (checked 2026-10-16) |
 | S.2 | `app/sync/client.py` + `activities.py` + `garmin_activities` table; fake-client tests (zip unwrap, bare FIT, resume, stop-on-429, K-known early stop, `no_original`) | S | ✅ (against a fake client) |
 | S.3 | `fitmon-sync` CLI; verify sha256 of a Garmin `ORIGINAL` equals the USB copy in `D:\fit\EpixPro42`; pre-seed IDs from `<id>_ACTIVITY.fit` names | S | ◐ CLI + pre-seed done; sha256-equality check needs a live download |
-| S.4 | **Back-fill**: full sync of the account; re-fetch the corrupt triathlon; reconcile counts | S | ☐ after S.1 |
-| S.5 | `/api/sync/*`, Import-tab sync panel, auth-required banner, events; **per-user encrypted token store; web "Connect Garmin" flow incl. MFA step, HTTPS-only; disconnect** (§7.5) | S | ✅ code + tests; live flow unverified |
-| S.6 | launchd timer on munchlax iterating all connected users (429 stops the run); Mike's first login there (after 5.2) | S | ◐ plist + script in `deploy/`, not installed |
-| S.7 | Phase B: capture real samples of each health endpoint → `docs/garmin-connect-health-endpoints.md` → `daily_health` + back-fill | S | ◐ written against garminconnect's typed models; **no real sample captured yet** - do that before trusting the columns |
+| S.4 | **Back-fill**: full sync of the account; re-fetch the corrupt triathlon; reconcile counts | S | ✅ back-fill done: 1,209 imported, 68 duplicates (checked 2026-10-16) |
+| S.5 | `/api/sync/*`, Import-tab sync panel, auth-required banner, events; **per-user encrypted token store; web "Connect Garmin" flow incl. MFA step, HTTPS-only; disconnect** (§7.5) | S | ✅ code + tests; in use |
+| S.6 | launchd timer on munchlax iterating all connected users (429 stops the run); Mike's first login there (after 5.2) | S | ✅ `com.fitmon.sync` installed on munchlax |
+| S.7 | Phase B: capture real samples of each health endpoint → `docs/garmin-connect-health-endpoints.md` → `daily_health` + back-fill | S | ◐ 741 days of real health data stored; the endpoint notes doc is still unwritten |
 | S.8 | Phase B UI: dashboard tiles, Body tab daily series, Trends → Recovery | S | ✅ code |
-| 2.1 | SPA shell + tabs; Activities table; Import tab (REST, no form POSTs) | 2 Core UI | ✅ code - **UI not yet seen in a browser** |
-| 2.2 | Session detail: summary, time-series, laps, map | 2 | ✅ code - unseen |
+| 2.1 | SPA shell + tabs; Activities table; Import tab (REST, no form POSTs) | 2 Core UI | ✅ |
+| 2.2 | Session detail: summary, time-series, laps, map | 2 | ✅ |
 | 2.3 | Explorer tab + API (retire `fitparse.py`, `*.bat`, `tri2025fit.out`) | 2 | ◐ Explorer done; legacy `fitparse.py` / `*.bat` / `tri2025fit.out` not removed yet |
 | 3.1 | `metrics.py`: zones, best efforts, NP/IF/TSS, TRIMP, SWOLF, decoupling + tests | 3 Analytics | ✅ |
-| 3.2 | Sport panels: run dynamics, bike pedalling/power curve, swim lengths, strength sets | 3 | ✅ code - unseen |
+| 3.2 | Sport panels: run dynamics, bike pedalling/power curve, swim lengths, strength sets | 3 | ✅ |
 | 3.3 | `fitness.py`: CTL/ATL/TSB, volume buckets; Dashboard | 3 | ✅ |
-| 3.4 | Trends tab; Body & zones tab; Gear tab | 3 | ✅ code - unseen |
+| 3.4 | Trends tab; Body & zones tab; Gear tab | 3 | ✅ |
 | 4.1 | Regenerate `fitparse/profile.py` from the current FIT SDK; re-run survey, see which `unknown_*` get names (expect `time_in_zone`) | 4 Depth | ☐ |
 | 4.2 | Research remaining Garmin-private messages (140, 79, 141, 233 …) → `docs/garmin-unknown-messages-research.md` with citations, *before* coding against them | 4 | ☐ |
 | 4.3 | Surface what 4.1/4.2 unlock (recovery time, training status, device time-in-zone …) | 4 | ☐ |
