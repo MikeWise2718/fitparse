@@ -409,8 +409,34 @@ def routes_for_session(session: Session) -> list:
 
 # --------------------------------------------------------------------------- suggestions
 
+_suggest_cache: dict = {}
+
+
+def _suggest_stamp(user_id: int) -> tuple:
+    """Changes whenever anything the suggestions depend on does."""
+    q = db.session.query
+    return (tuple(q(db.func.count(SessionShape.session_id), db.func.max(SessionShape.session_id))
+            .filter(SessionShape.user_id == user_id).one()),
+            q(db.func.count()).select_from(RouteMatch).filter(RouteMatch.user_id == user_id).scalar(),
+            tuple(q(db.func.count(Route.id), db.func.max(Route.updated_at)).filter(Route.user_id == user_id).one()),
+            q(db.func.count()).select_from(RouteSuggestionHidden).filter(RouteSuggestionHidden.user_id == user_id).scalar(),
+            q(db.func.count(Session.id)).filter(Session.user_id == user_id, Session.excluded.is_(True)).scalar())
+
+
 def suggestions(user_id: int) -> list:
-    """Groups of >= 3 activities over the same ground that no saved route covers yet."""
+    """Groups of >= 3 activities over the same ground that no saved route covers yet. Takes a few
+    seconds over a few hundred activities, so the answer is kept until something it depends on
+    changes."""
+    stamp = _suggest_stamp(user_id)
+    hit = _suggest_cache.get(user_id)
+    if hit and hit[0] == stamp:
+        return hit[1]
+    out = _suggestions(user_id)
+    _suggest_cache[user_id] = (stamp, out)
+    return out
+
+
+def _suggestions(user_id: int) -> list:
     on_routes = {(m.file_id, m.idx) for m in RouteMatch.query.filter_by(user_id=user_id).all()}
     hidden = {h.key for h in RouteSuggestionHidden.query.filter_by(user_id=user_id).all()}
     shapes = (db.session.query(SessionShape, Session.start_time, Session.sport, Session.sub_sport)
