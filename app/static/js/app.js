@@ -445,9 +445,11 @@ async function loadDetail(id) {
         {label: 'Power', num: 1, get: (l) => fmt.num(l.avg_power)}, {label: 'NP', num: 1, get: (l) => fmt.num(l.norm_power)}, {label: 'Cad', num: 1, get: (l) => fmt.num(l.avg_cadence)},
         {label: 'Climb', num: 1, get: (l) => fmt.elev(l.ascent_m)}, {label: 'Type', get: (l) => [l.intensity, l.swim_stroke, l.trigger].filter(Boolean).join(' · ')}];
     table('det-laps', lapCols, d.laps);
-    table('det-devices', [{label: 'Device', get: (x) => [x.manufacturer, x.product].filter(Boolean).join(' ') || x.device_type}, {label: 'Type', get: (x) => x.device_index === 'creator' ? 'watch / head unit' : x.device_type},
+    const devs = describeDevices(d.devices.filter((x) => x.product || x.device_type || x.serial));
+    table('det-devices', [{label: 'Device', get: (x) => [x.manufacturer, x.product].filter(Boolean).join(' ') || ''},
+        {label: 'Part of', get: (x) => x._package}, {label: 'What it is', get: (x) => x._what}, {label: 'What it is for (best guess)', get: (x) => x._for},
         {label: 'Serial', get: (x) => x.serial}, {label: 'Firmware', get: (x) => x.sw_version}, {label: 'Battery', html: (x) => x.battery_status ? `<span class="tag ${['low', 'critical'].includes(x.battery_status) ? 'bad' : 'good'}">${esc(x.battery_status)}</span> ${x.battery_voltage ? fmt.num(x.battery_voltage, 2) + ' V' : ''}` : ''}],
-        d.devices.filter((x) => x.product || x.device_type || x.serial));
+        devs);
     $('det-download').href = `/api/files/${d.file.id}/download`;
     drawTrim(d);
 
@@ -636,6 +638,53 @@ function initPanels() {
         p.querySelector('.dtitle').addEventListener('click', toggle);
         p.querySelector('.dgrip').addEventListener('pointerdown', (e) => startPanelDrag(e, p));
     });
+}
+
+// ---------------------------------------------------------------- devices used
+// A FIT file lists one device_info entry per sensor stream, not per gadget: the watch once for
+// itself and once for each built-in sensor, a chest strap once for each thing it sends. These
+// tables name the numbered types the bundled FIT profile predates, and group the rows into the
+// physical device each belongs to. Types are numbers in a different list per connection.
+const LOCAL_SENSOR = {0: ['GPS receiver', 'position, speed and distance outdoors'], 1: ['GLONASS receiver', 'satellite positioning'],
+    2: ['GPS + GLONASS receiver', 'satellite positioning'], 3: ['accelerometer', 'steps and cadence; pace and distance indoors; swim strokes and turns'],
+    4: ['barometer', 'altitude and climb'], 5: ['temperature sensor', 'wrist temperature'], 10: ['optical heart-rate sensor', 'heart rate at the wrist'],
+    12: ['sensor hub', 'the chip that runs the built-in sensors']};
+const ANT_SENSOR = {heart_rate: ['heart rate', 'heart rate'], stride_speed_distance: ['speed and distance', 'pace, distance and cadence (foot pod, or a strap that counts steps)'],
+    30: ['running dynamics', 'ground contact time and balance, vertical oscillation, stride length'], running_dynamics: ['running dynamics', 'ground contact time and balance, vertical oscillation, stride length'],
+    bike_power: ['power', 'power, often cadence and left/right balance'], bike_speed_cadence: ['speed and cadence', 'wheel speed and pedalling cadence'],
+    bike_speed: ['speed', 'wheel speed'], bike_cadence: ['cadence', 'pedalling cadence'], fitness_equipment: ['fitness equipment (FE-C)', 'indoor trainer or gym machine: power, speed, resistance'],
+    env_sensor: ['environment sensor', 'air temperature (e.g. Tempe)'], environment_sensor_legacy: ['environment sensor', 'air temperature (e.g. Tempe)'],
+    bike_radar: ['radar', 'traffic approaching from behind'], bike_light_main: ['bike light', 'lights'], bike_light_shared: ['bike light', 'lights'],
+    muscle_oxygen: ['muscle oxygen', 'muscle oxygen saturation'], control: ['remote', 'remote control'], control_hub: ['remote', 'remote control'],
+    multi_sport_speed_distance: ['speed and distance', 'speed and distance'], weight_scale: ['scale', 'weight']};
+const BLE_SENSOR = {0: ['GPS', 'position from a connected device'], 1: ['heart rate', 'heart rate'], 2: ['power', 'power, often cadence'],
+    3: ['speed and cadence', 'wheel speed and pedalling cadence'], 4: ['speed', 'wheel speed'], 5: ['cadence', 'pedalling cadence'],
+    6: ['foot pod', 'pace, distance and cadence'], 7: ['indoor trainer', 'power, speed, resistance']};
+function describeDevices(rows) {
+    const creator = rows.find((x) => x.device_index === 'creator');
+    const watchSerial = creator && creator.serial, watchName = creator ? `watch (${[creator.manufacturer, creator.product].filter(Boolean).join(' ')})` : 'watch';
+    const kind = (x) => {
+        if (x.device_index === 'creator') return ['the watch itself', 'records the activity'];
+        const t = x.device_type, table = x.source_type === 'local' ? LOCAL_SENSOR : x.source_type === 'bluetooth_low_energy' ? BLE_SENSOR : ANT_SENSOR;
+        if (table[t]) return table[t];
+        return [t == null || t === '' ? 'unknown' : `type ${t} (not in fitmon's FIT profile)`, x.source_type === 'local' ? 'a built-in sensor' : ''];
+    };
+    // The sensors a gadget reports, by serial, decide what to call it: a heart-rate sender that
+    // also sends running dynamics is a chest strap (an HRM-Pro), not a wrist sensor.
+    const bySerial = {};
+    rows.forEach((x) => { if (x.serial && x.serial !== watchSerial && x.source_type !== 'local') (bySerial[x.serial] = bySerial[x.serial] || []).push(kind(x)[0]); });
+    const gadget = (names) => (names.includes('heart rate') ? (names.length > 1 ? 'chest strap' : 'heart-rate monitor')
+        : names.includes('power') ? 'power meter' : names.includes('fitness equipment (FE-C)') || names.includes('indoor trainer') ? 'indoor trainer'
+        : names.includes('speed and cadence') || names.includes('speed') || names.includes('cadence') ? 'bike sensor'
+        : names.includes('speed and distance') || names.includes('foot pod') ? 'foot pod' : names.includes('radar') ? 'radar' : 'sensor');
+    return rows.map((x) => {
+        const [what, purpose] = kind(x);
+        const builtIn = x.device_index === 'creator' || x.source_type === 'local' || (watchSerial && x.serial === watchSerial);
+        const product = [x.manufacturer, x.product].filter(Boolean).join(' ');
+        const pkg = builtIn ? watchName : x.serial ? `${gadget(bySerial[x.serial] || [])}${product ? ` (${product})` : ''} · …${String(x.serial).slice(-4)}`
+            : product || 'unknown';
+        return {...x, _package: pkg, _what: what, _for: purpose};
+    }).sort((a, b) => (a._package === watchName ? 0 : 1) - (b._package === watchName ? 0 : 1) || a._package.localeCompare(b._package));
 }
 
 // A re-index recreates session rows, so the activity usually comes back under a new id. Only
