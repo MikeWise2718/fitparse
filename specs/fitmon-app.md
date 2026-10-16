@@ -492,6 +492,29 @@ gets an account until A.1–A.5 and the Tailscale HTTPS front (5.3) are done.
 
 ---
 
+### 8.2 Build log - 2026-09-22 to 2026-10-15 (v0.4.4 - v0.5.2)
+
+Versions before 0.4.4 are in `git log`. From there, all deployed to munchlax:
+
+| Version | Change |
+|---|---|
+| 0.4.4 | `fitmon-sync disconnect` |
+| 0.4.5 | Header **Sync** button: quick sync (new activities + today's health, no back-fill) |
+| 0.4.6-0.4.7 | **Running economy** chart (m per heartbeat, 5-run average, watch VO2 max alongside); triathlon run legs excluded |
+| 0.4.8 | Own session cookie `fitmon_session` - ytsum's default `session` on the same Tailscale host wiped fitmon's CSRF token; CSRF retry in `api()` |
+| 0.4.9 | `/api/screenshot` + About tab; demo-data capture tool; fitness chart axes fixed |
+| 0.4.10-0.4.11 | Date axes mark month starts (line + name; year on January; bars between) |
+| 0.4.12 | Changeable display name (Settings → Profile), shown on every chart; "Demo data" badge |
+| 0.4.13 | Maps back on OSM tiles with a referrer (CARTO now needs a key; OSM's "blocked" was our `Referrer-Policy`) |
+| 0.4.14 | Heart-rate chart and zone bars in Garmin zone colours; `hr_zones` in the detail API |
+| 0.5.0 | **Activity playback** (one clock: map marker + cursor on every graph, click to jump, keys) and **movable, collapsible panels** (layout saved per user) |
+| 0.5.1 | **End here** (trim at the playback point) and **Change sport** (`SessionSport`); re-index navigation fix |
+| 0.5.2 | Landing gallery: dashboard, animated real run (privacy-cut), trends |
+
+Data corrections made on munchlax 2026-10-15: the 70.3 run leg trimmed at the official split
+3:10:01; a 2022 gravel ride saved as a run changed to cycling (it held the 400 m / 1 km / mile
+running records); Louise's weigh-ins removed (shared scale).
+
 ### 8.1 Build log - 2026-09-19 (v0.2.0)
 Everything except the items marked ☐/◐ above was built in one pass. What real data taught us
 (each is now covered by a test):

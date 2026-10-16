@@ -123,8 +123,13 @@ uv run fitmon-web -w                      # web + inline job worker on :8640 (de
 uv run fitmon-web  /  uv run fitmon-worker    # as deployed: two processes, exactly one worker
 uv run fitmon-admin create-user -u NAME -a
 uv run fitmon-import -u NAME -d D:/fit
-uv run fitmon-sync login|run|status
+uv run fitmon-sync login|run|status|disconnect
+uv run --with playwright --with pillow python tools/screenshot.py -af <run.fit> -mh 170   # landing pictures
 ```
+`tools/screenshot.py` makes the three public landing pictures (`app/static/screenshot.png`,
+`app/static/screenshots/`): two from an invented "Demo athlete" year, one animated playback of a
+real run Mike chose (privacy-cut: first/last 500 m off the map). The FIT file is passed in, never
+committed. Re-run it when the dashboard, trends or activity page change visibly.
 On spearow prefix with `env -u PYTHONHOME` (Bash) if Python fails with `SRE module mismatch`.
 
 ## Rules that are easy to break
@@ -132,8 +137,16 @@ On spearow prefix with `env -u PYTHONHOME` (Bash) if Python fails with `SRE modu
   Another user's id is a 404. `tests/fitmon/test_scoping.py` walks every id-bearing route as the
   wrong user and **fails on any new `<arg>` it has no test id for** — add one, don't skip it.
 - Routes are private by default (`auth.PUBLIC_ENDPOINTS` is the allow-list); writes need `X-CSRF-Token`.
-- Bulk parsing/import/sync run in the **job worker**, never in a request (only the single-file "Re-parse" button parses inline). `importer.import_bytes()` is
-  the only way data enters the index.
+- Bulk parsing/import/sync run in the **job worker**, never in a request. Single-file re-indexes
+  run inline: "Re-parse", a trim (incl. "End here"), and a sport change. `importer.import_bytes()`
+  is the only way data enters the index.
+- **Per-activity corrections are keyed by `(file_id, idx)`, never by session id**:
+  `SessionTrim`, `SessionExclusion`, `SessionSport`. A re-index deletes and recreates session
+  rows (new ids), so anything stored on the row is lost; the importer re-applies these before
+  computing metrics. In the UI, navigate with `openDetail(newId)` after one - reloading the old
+  id 404s and bounces to the list.
+- The JavaScript has **no automated tests**; check UI changes in a real browser (Playwright
+  against a local copy, as `tools/screenshot.py` does).
 - Only `app/sync/client.py` imports `garminconnect` (unofficial API, pinned). Passwords are never
   stored or logged; `events.py` redacts credential-looking fields.
 - Never turn on the Werkzeug debugger (`debug=True`): other people can reach this app.
