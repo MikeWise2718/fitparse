@@ -330,5 +330,9 @@ Each is cheap to change later.
 - **Loops from a start point** put three via points on a circle through the start, scaled until the
   length fits. Each Suggest turns the circle by 60°, so pressing it again gives other loops.
 - **Lollipop** tries three headings: straight away from the start, and ±50°.
+- **Suggested routes group by length too** (0.6.2): repeats within 5 % of each other's length and
+  ≥ 90 % the same ground both ways, at most ten groups each for runs and rides. With 12 % and
+  85 % across all sports, an 11 km run (a 9.9 km loop plus a kilometre) was grouped with that loop
+  as "11 km, 5 times". The gravel groups then pushed it off the list.
 - The run profile is BRouter's `hiking-mountain`, untuned. §10's comparison against real runs is
   still to do.

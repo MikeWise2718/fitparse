@@ -28,8 +28,13 @@ from ..settings import user_dir
 SHAPE_STEP_M = 25.0
 MATCH_RADIUS_M = 35.0       # GPS under trees and a routed line along the same path differ by 10-20 m
 MATCH_SHARE = 0.9           # both ways: the activity stays on the route, and covers all of it
-SUGGEST_SHARE = 0.85
+SUGGEST_SHARE = 0.9
+# Same ground but a different length is a different route: an 11 km run that is a 9.9 km loop
+# plus a kilometre was once grouped with that loop and offered as "11 km, 5 times". GPS puts
+# repeats of one route within 1-2 % of each other.
+SUGGEST_LENGTH = 0.05
 SUGGEST_MIN_RUNS = 3
+SUGGEST_PER_FAMILY = 10      # runs and rides each get their own share of the list
 MAX_PLAN_POINTS = 40000
 
 
@@ -451,7 +456,7 @@ def _suggestions(user_id: int) -> list:
         pts = None
         for c in clusters:
             rep = c['rep']
-            if rep.family != shape.family or abs(rep.distance_m - shape.distance_m) > 0.12 * rep.distance_m:
+            if rep.family != shape.family or abs(rep.distance_m - shape.distance_m) > SUGGEST_LENGTH * rep.distance_m:
                 continue
             if geo.dist([rep.start_lon, rep.start_lat], [shape.start_lon, shape.start_lat]) > 400:
                 continue
@@ -476,7 +481,13 @@ def _suggestions(user_id: int) -> list:
                     'first': c['members'][-1][1], 'kind': _kind(c['pts']),
                     'preview': geo.simplify(c['pts'], 20.0)})
     out.sort(key=lambda s: -s['count'])
-    return out[:12]
+    kept, per = [], {}
+    for x in out:
+        family = FAMILY.get(x['sport'], 'foot')
+        per[family] = per.get(family, 0) + 1
+        if per[family] <= SUGGEST_PER_FAMILY:
+            kept.append(x)
+    return kept
 
 
 def hide_suggestion(user_id: int, key: str) -> None:

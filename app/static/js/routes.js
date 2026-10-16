@@ -152,7 +152,8 @@ function wireRoutePage() {
     $('rd-fit').addEventListener('click', () => { const v = Number($('rd-target').value); if (!v) { toast(`Give a length in ${unitName()}.`); return; } go('planner', `${one.data.route.id},${v}`); });
     $('rd-target').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('rd-fit').click(); });
     $('rd-star').addEventListener('click', () => updateRoute({starred: !one.data.route.starred}));
-    $('rd-rename').addEventListener('click', () => { const n = prompt('Route name', one.data.route.name); if (n) updateRoute({name: n}); });
+    const rename = () => { const n = prompt('Name for this route', one.data.route.name); if (n && n.trim()) updateRoute({name: n.trim()}).then((r) => { if (r._ok) toast('Renamed.'); }); };
+    ['rd-rename', 'rd-name', 'rd-name-edit'].forEach((id) => $(id).addEventListener('click', rename));
     $('rd-sport').addEventListener('change', (e) => updateRoute({sport: e.target.value}));
     $('rd-notes-save').addEventListener('click', () => updateRoute({notes: $('rd-notes').value}).then(() => toast('Notes saved.')));
     $('rd-delete').addEventListener('click', async () => {
@@ -459,7 +460,10 @@ async function activityRoutes(sessionId) {
     if (!d._ok || String(state.arg) !== String(sessionId)) return;
     btn.hidden = !d.savable;
     btn.onclick = async () => {
-        const r = await api(`/api/routes/from-session/${sessionId}`, {method: 'POST', json: {}});
+        const s = state.session && state.session.session;
+        const guess = s ? (s.name || `${km(s.distance_m)} ${s.sport === 'cycling' ? 'ride' : s.sport === 'running' ? 'run' : 'walk'}`) : '';
+        const name = prompt('Name for this route', guess); if (name == null) return;
+        const r = await api(`/api/routes/from-session/${sessionId}`, {method: 'POST', json: {name: name.trim()}});
         if (r._ok) { toast('Saved to your routes.'); go('route', r.route.id); }
     };
     if (d.routes.length) $('det-banner').insertAdjacentHTML('beforeend', `<div class="banner good">On ${d.routes.length > 1 ? 'routes' : 'route'}: ${d.routes.map((r) => `<a data-route="${r.id}">${esc(r.name)}</a>${r.direction === 'rev' ? ' (reversed)' : ''}`).join(', ')}</div>`);

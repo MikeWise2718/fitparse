@@ -253,16 +253,21 @@ def test_repeated_activities_are_suggested(app, alice, home):
     from app.models import FitFile, Session, SessionShape, db
     from app.services import routelib
     loop = [c[:2] for c in square()]
+    # The fourth is the same loop plus a 100 m out-and-back spur, 10 % longer: same ground, a
+    # different route, so it must not be counted with the others (an 11 km run was once offered
+    # as "11 km, 5 times" that way, grouped with a 9.9 km loop).
+    spur = [geo.offset(loop[0], -1.5708, d) for d in range(0, 101, 25)]
+    longer = loop + spur + spur[::-1]
     with app.app_context():
-        for k in range(3):
+        for k in range(4):
             f = FitFile(user_id=alice.user_id, sha256=f'{k:064d}', original_name=f'{k}.fit')
             db.session.add(f)
             db.session.flush()
             s = Session(file_id=f.id, user_id=alice.user_id, idx=0, sport='running', has_gps=True,
-                        start_time=datetime(2026, 5, 1) + timedelta(days=k), distance_m=2000)
+                        start_time=datetime(2026, 5, 1) + timedelta(days=k if k < 3 else -1), distance_m=2000)
             db.session.add(s)
             db.session.flush()
-            jitter = [[c[0] + 0.00005 * k, c[1]] for c in loop]
+            jitter = [[c[0] + 0.00005 * k, c[1]] for c in (loop if k < 3 else longer)]
             pts = geo.resample(jitter, 25)
             db.session.add(SessionShape(session_id=s.id, user_id=alice.user_id, file_id=f.id, idx=0, family='foot',
                                         distance_m=geo.length(pts), start_lon=pts[0][0], start_lat=pts[0][1],
