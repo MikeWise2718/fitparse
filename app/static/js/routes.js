@@ -227,8 +227,8 @@ function drawTimes(d) {
             {type: 'line', label: 'avg HR', data: h.map((x) => x.avg_hr), borderColor: '#c0392b', backgroundColor: '#c0392b', pointRadius: 2, borderWidth: 1, borderDash: [4, 3], yAxisID: 'y1', spanGaps: true}]},
             options: {scales: {y: {reverse: foot, ticks: {callback: (v) => (foot ? fmt.dur(v) : v)}}, y1: {position: 'right', grid: {drawOnChartArea: false}}},
                 plugins: {tooltip: {callbacks: {label: (c) => (c.datasetIndex === 0 && foot ? `pace ${fmt.dur(c.parsed.y)} /${unitName()}` : `${c.dataset.label} ${Math.round(c.parsed.y * 10) / 10}`),
-                    footer: (items) => { const x = h[items[0].dataIndex]; return `${fmt.dur(x.timer_s)} · ${km(x.distance_m)}${x.direction === 'rev' ? ' · reversed' : ''}`; }}}},
-                onClick: (ev, els) => { if (els.length) go('detail', h[els[0].index].session_id); }}});
+                    footer: (items) => { const x = h[items[0].dataIndex]; return `${fmt.dur(x.timer_s)} · ${km(x.distance_m)}${x.direction === 'rev' ? ' · reversed' : ''}`; }}}}},
+            activityAt: (ds, i) => h[i].session_id});
         const best = h.filter((x) => x.timer_s).sort((a, b) => a.timer_s - b.timer_s)[0], last = h[h.length - 1];
         $('rd-best').innerHTML = best ? `Fastest <b>${fmt.dur(best.timer_s)}</b> (${esc(fmt.day(best.start_time))}) · latest ${fmt.dur(last.timer_s)} (${esc(fmt.day(last.start_time))})` : '';
     }

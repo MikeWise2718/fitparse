@@ -44,10 +44,44 @@ Chart.register({id: 'owner', afterDraw(c) {
 function chart(id, config) {
     if (state.charts[id]) state.charts[id].destroy();
     const el = $(id); if (!el) return null;
+    const activityAt = config.activityAt; delete config.activityAt;
     config.options = Object.assign({responsive: true, maintainAspectRatio: false, animation: false,
         interaction: {mode: 'index', intersect: false}}, config.options || {});
+    if (activityAt) linkActivities(config.options, activityAt);
     state.charts[id] = new Chart(el, config);
+    if (activityAt) linkMiddleClick(state.charts[id], activityAt); else el.activityAt = null;
     return state.charts[id];
+}
+// Charts whose points are activities pass `activityAt(datasetIndex, index) -> session id or null`.
+// A click opens the activity; Ctrl/Cmd/Shift-click or a middle click opens it in a new tab.
+function openActivity(id, e) {
+    if (e && (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1)) window.open(`${location.pathname}#detail/${id}`, '_blank');
+    else go('detail', id);
+}
+const activityIdOf = (els, at) => { for (const el of els) { const id = at(el.datasetIndex, el.index); if (id != null) return id; } return null; };
+function linkActivities(options, at) {
+    options.onClick = (ev, els) => { const id = activityIdOf(els, at); if (id != null) openActivity(id, ev.native); };
+    options.onHover = (ev, els) => { ev.native.target.style.cursor = activityIdOf(els, at) != null ? 'pointer' : ''; };
+    const plugins = options.plugins = options.plugins || {}, tooltip = plugins.tooltip = plugins.tooltip || {};
+    const callbacks = tooltip.callbacks = tooltip.callbacks || {}, footer = callbacks.footer;
+    callbacks.footer = (items) => [].concat(footer ? footer(items) : [],
+        activityIdOf(items.map((t) => ({datasetIndex: t.datasetIndex, index: t.dataIndex})), at) != null
+            ? ['click to open · Ctrl+click for a new tab'] : []);
+}
+function linkMiddleClick(c, at) {
+    // Chart.js only reports left clicks; a middle click (open in a new tab) is caught here. Charts
+    // are rebuilt on the same canvas, so listen once per canvas and ask for whichever chart is
+    // on it now - a listener holding the old chart would call into a destroyed one.
+    const canvas = c.canvas; canvas.activityAt = at;
+    if (canvas.dataset.middleClick) return;
+    canvas.dataset.middleClick = '1';
+    canvas.addEventListener('mousedown', (e) => { if (e.button === 1 && canvas.activityAt) e.preventDefault(); });   // no auto-scroll
+    canvas.addEventListener('auxclick', (e) => {
+        const now = Chart.getChart(canvas);
+        if (e.button !== 1 || !now || !canvas.activityAt) return;
+        const els = now.getElementsAtEventForMode(e, now.options.interaction.mode, {intersect: now.options.interaction.intersect}, true);
+        const id = activityIdOf(els, canvas.activityAt); if (id != null) openActivity(id, e);
+    });
 }
 function table(id, columns, rows, onClick) {
     const el = $(id);
@@ -752,19 +786,25 @@ async function loadTrends() {
             const p = pts.filter((g) => g.day === d).pop(); return p ? p[key] : null; }),
             color(sp), {spanGaps: true, borderDash: [4, 3], pointRadius: 0}));
     });
-    chart('tr-vo2-chart', {type: 'line', data: {labels: vo2Days, datasets: vo2Sets}, options: {scales: {x: timeAxis()}}});
+    const vo2Ids = sports.map((sp) => vo2Days.map((d) => { const p = vo2.points.filter((x) => x.sport === sp && fmt.day(x.at) === d).pop(); return p ? p.id : null; }));
+    chart('tr-vo2-chart', {type: 'line', data: {labels: vo2Days, datasets: vo2Sets}, options: {scales: {x: timeAxis()}},
+        activityAt: (ds, i) => (vo2Ids[ds] ? vo2Ids[ds][i] : null)});
     state.trVolume = vol; volumeChart('tr-volume-chart', vol, $('tr-volume-metric').value);
     const windows = pc.all_time.map((p) => p.window);
     chart('tr-power-chart', {type: 'line', data: {labels: windows.map((w) => fmt.window('power', w)), datasets: [scatterLine('all time', pc.all_time.map((p) => p.value), '#7d4cdb'),
-        scatterLine('selected range', windows.map((w) => (pc.range.find((p) => p.window === w) || {}).value ?? null), '#e4572e', {borderDash: [4, 3]})]}, options: {scales: {y: {title: {display: true, text: 'W'}}}}});
+        scatterLine('selected range', windows.map((w) => (pc.range.find((p) => p.window === w) || {}).value ?? null), '#e4572e', {borderDash: [4, 3]})]}, options: {scales: {y: {title: {display: true, text: 'W'}}}},
+        activityAt: (ds, i) => (ds === 0 ? pc.all_time[i].session_id : ds === 1 ? (pc.range.find((p) => p.window === windows[i]) || {}).session_id ?? null : null)});
     table('tr-best-table', [{label: 'Distance', get: (b) => fmt.window('pace', b.window)}, {label: 'Best ever', num: 1, get: (b) => fmt.dur(b.value)}, {label: 'Pace', num: 1, get: (b) => fmt.speed(b.window / b.value, 'running')}, {label: 'On', get: (b) => fmt.day(b.at)},
         {label: 'In range', num: 1, get: (b) => { const r = best.range.find((x) => x.window === b.window); return r ? fmt.dur(r.value) : ''; }}], best.all_time, (b) => go('detail', b.session_id));
     const prSel = $('tr-pr-kind'); if (!prSel.options.length) prSel.innerHTML = [['power', 1200], ['power', 300], ['power', 60], ['pace', 5000], ['pace', 10000], ['pace', 1000]].map(([k, w]) => `<option value="${k}:${w}">${k === 'power' ? 'power ' : 'run '}${fmt.window(k, w)}</option>`).join('');
     loadRecordProgression(); loadEfficiency(); loadEconomy();
-    chart('tr-te-chart', {type: 'scatter', data: {datasets: [...new Set(te.points.map((p) => p.sport))].map((sp, i) => ({label: fmt.sport(sp), backgroundColor: color(sp, i), data: te.points.filter((p) => p.sport === sp).map((p) => ({x: p.aerobic, y: p.anaerobic || 0}))}))},
-        options: {interaction: {mode: 'nearest'}, scales: {x: {min: 0, max: 5, title: {display: true, text: 'aerobic'}}, y: {min: 0, max: 5, title: {display: true, text: 'anaerobic'}}}}});
+    const teSports = [...new Set(te.points.map((p) => p.sport))], teBy = teSports.map((sp) => te.points.filter((p) => p.sport === sp));
+    chart('tr-te-chart', {type: 'scatter', data: {datasets: teSports.map((sp, i) => ({label: fmt.sport(sp), backgroundColor: color(sp, i), data: teBy[i].map((p) => ({x: p.aerobic, y: p.anaerobic || 0}))}))},
+        options: {interaction: {mode: 'nearest'}, scales: {x: {min: 0, max: 5, title: {display: true, text: 'aerobic'}}, y: {min: 0, max: 5, title: {display: true, text: 'anaerobic'}}}},
+        activityAt: (ds, i) => (teBy[ds] && teBy[ds][i] ? teBy[ds][i].id : null)});
     chart('tr-swim-chart', {type: 'line', data: {labels: swim.points.map((p) => fmt.day(p.at)), datasets: [scatterLine('s / 100 m', swim.points.map((p) => p.pace_100m_s), '#17a2b8'), scatterLine('SWOLF', swim.points.map((p) => p.swolf), '#e4572e', {yAxisID: 'y1', spanGaps: true})]},
-        options: {scales: {x: timeAxis(), y: {reverse: true, title: {display: true, text: 'faster ↑'}}, y1: {position: 'right', grid: {drawOnChartArea: false}}}}});
+        options: {scales: {x: timeAxis(), y: {reverse: true, title: {display: true, text: 'faster ↑'}}, y1: {position: 'right', grid: {drawOnChartArea: false}}}},
+        activityAt: (ds, i) => swim.points[i].id});
     const sdays = [...new Set(Object.values(strength.categories).flat().map((x) => x.day))].sort();
     chart('tr-strength-chart', {type: 'bar', data: {labels: sdays, datasets: Object.entries(strength.categories).map(([cat, rows], i) => ({label: fmt.sport(cat), backgroundColor: `hsl(${i * 47 % 360}, 60%, 50%)`, data: sdays.map((d) => (rows.find((r) => r.day === d) || {}).volume_kg || 0)}))},
         options: {scales: {x: timeAxis({stacked: true}, {bars: true}), y: {stacked: true}}}});
@@ -775,10 +815,11 @@ async function loadTrends() {
             {type: 'bar', label: 'sleep score', data: rows.map((h) => h.sleep_score), backgroundColor: 'rgba(11,107,203,.18)'}]}, options: {scales: {x: timeAxis(), y1: {position: 'right', grid: {drawOnChartArea: false}}}}}); }
 }
 async function loadRecordProgression() { const [kind, w] = $('tr-pr-kind').value.split(':'); const d = await api(`/api/trends/records?kind=${kind}&window=${w}` + (kind === 'pace' ? '&sport=running' : '&sport=cycling'));
-    chart('tr-pr-chart', {type: 'line', data: {labels: d.progression.map((p) => fmt.day(p.at)), datasets: [{label: kind === 'power' ? 'W' : 'seconds', data: d.progression.map((p) => p.value), stepped: true, borderColor: '#d98e04', pointRadius: 4}]}, options: {scales: {y: {reverse: kind === 'pace'}}, plugins: {legend: {display: false}}}}); }
+    chart('tr-pr-chart', {type: 'line', data: {labels: d.progression.map((p) => fmt.day(p.at)), datasets: [{label: kind === 'power' ? 'W' : 'seconds', data: d.progression.map((p) => p.value), stepped: true, borderColor: '#d98e04', pointRadius: 4}]}, options: {scales: {y: {reverse: kind === 'pace'}}, plugins: {legend: {display: false}}},
+        activityAt: (ds, i) => d.progression[i].session_id}); }
 async function loadEfficiency() { const d = await api(`/api/trends/efficiency?sport=${$('tr-eff-sport').value}&` + range());
     chart('tr-eff-chart', {type: 'line', data: {labels: d.points.map((p) => fmt.day(p.at)), datasets: [scatterLine('efficiency', d.points.map((p) => p.efficiency), '#0b6bcb'), scatterLine('decoupling %', d.points.map((p) => p.decoupling), '#e4572e', {yAxisID: 'y1', showLine: false})]},
-        options: {scales: {x: timeAxis(), y1: {position: 'right', grid: {drawOnChartArea: false}}}}}); }
+        options: {scales: {x: timeAxis(), y1: {position: 'right', grid: {drawOnChartArea: false}}}}, activityAt: (ds, i) => d.points[i].id}); }
 async function loadEconomy() {
     const d = await api('/api/trends/economy?' + range()), pts = d.points, ft = statute();
     const per = (v) => (v == null ? null : ft ? +(v * 3.28084).toFixed(2) : v), unit = ft ? 'ft/beat' : 'm/beat';
@@ -789,8 +830,8 @@ async function loadEconomy() {
         scatterLine(`average of last ${d.rolling_runs}`, pts.map((p) => per(p.rolling)), '#08457e', {pointRadius: 0, borderWidth: 2.2, spanGaps: true}),
         scatterLine('watch VO2 max', pts.map((p) => p.vo2max), '#e4572e', {yAxisID: 'y1', showLine: false, pointStyle: 'rectRot'})]},
         options: {scales: {x: timeAxis(), y: {title: {display: true, text: unit}}, y1: {position: 'right', grid: {drawOnChartArea: false}, title: {display: true, text: 'VO2 max'}}},
-            plugins: {tooltip: {callbacks: {footer: (items) => { const p = pts[items[0].dataIndex]; return `${pace(p)} · ${p.avg_hr} bpm · ${p.minutes} min${p.treadmill ? ' · treadmill' : ''}`; }}}},
-            onClick: (ev, els) => { if (els.length) go('detail', pts[els[0].index].id); }}});
+            plugins: {tooltip: {callbacks: {footer: (items) => { const p = pts[items[0].dataIndex]; return `${pace(p)} · ${p.avg_hr} bpm · ${p.minutes} min${p.treadmill ? ' · treadmill' : ''}`; }}}}},
+        activityAt: (ds, i) => pts[i].id});
 }
 
 // ---------------------------------------------------------------- body, gear
