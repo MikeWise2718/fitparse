@@ -18,7 +18,7 @@ cycling routes** to make that manageable.
   │ ...                │ match  │  61 km · gravel · ×4 │◀─save─│  → pick, tweak, save     │
   └────────────────────┘        └──────────────────────┘       └──────────────────────────┘
                                           │
-                                          └── export GPX / FIT course → watch
+                                          └── download as GPX
 ```
 
 - **Routes come mostly from what you have already done.** Any GPS activity becomes a route with
@@ -109,7 +109,7 @@ Variants indent under their parent. ×N is how many activities followed the rout
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────────┐
 │ ← Routes   Langen Wald loop   ✎         run · 10.0 km · 45 m ↑ · 12% unpaved · loop        │
-│ [ Edit in planner ]  [ Make it … km ]  [ GPX ⤓ ]  [ FIT course ⤓ ]  [ ⋯ ]                   │
+│ [ Edit in planner ]  [ Make it … km ]  [ GPX ⤓ ]  [ ⋯ ]                                    │
 ├──────────────────────────────────────────────┬─────────────────────────────────────────────┤
 │                 map, route + elevation       │ Times on this route (23)                    │
 │                                              │   pace   5:48 ┤      •                      │
@@ -223,14 +223,14 @@ via points on a rough circle with a circumference of the target length, routes i
 treats it like any other route (methods 1 and 6 to fit the length). With the same rotation
 knob as in brouter-web, "another one" gives a different loop.
 
-## 5. Export to the watch
-- **GPX** (track + route points) is downloadable; Garmin Connect and every other tool imports it.
-- **FIT course**, so the watch gives turn-by-turn and the course's elevation: this needs a FIT
-  *writer*. fitparse only reads, and writing FIT is listed as out of scope in the main spec, so
-  this needs your decision (§9). The usual route is the `fit-tool` package, kept in one module.
-- Getting it onto the watch: download it and copy it to `GARMIN/NewFiles` over USB, or import the
-  GPX in Garmin Connect. Sending it to Garmin Connect automatically would write to Garmin, which the
-  main spec also rules out. Not proposed.
+## 5. Export: GPX only
+- **GPX** (track + route points) is downloadable. Garmin Connect, and every other tool, imports
+  it.
+- **Watch guidance is dropped for now** (Mike, 2026-10-16: he has never used his watch for
+  guidance). A FIT course would give turn alerts, off-course warnings, distance to go, ClimbPro
+  and racing a past time. That would earn its keep on variants that go onto unfamiliar paths. But
+  it needs a FIT *writer*, and the parsing library stays read-only. If it is ever wanted,
+  importing the GPX by hand in Garmin Connect gets a course onto the watch without any code.
 
 ## 6. Data model additions (SCHEMA_VERSION 2; re-index rebuilds them from the files)
 
@@ -251,7 +251,7 @@ POST   /api/routes                       create (from activity, from planner res
 GET    /api/routes/<id>                  route + matches + stats
 PATCH  /api/routes/<id>                  rename, notes, tags, new geometry
 DELETE /api/routes/<id>
-GET    /api/routes/<id>.gpx              export   ·   GET /api/routes/<id>.fit  (if §9.2 = yes)
+GET    /api/routes/<id>.gpx              export
 POST   /api/routes/from-session/<id>     save activity as route (snaps + simplifies the GPS line)
 POST   /api/plan/segment                 route between control points (one leg) → line + stats
 POST   /api/plan/fit-length              {route, target_m, tolerance, prefer} → candidates[]
@@ -280,7 +280,7 @@ go to the worker.
 | R.9 | `fit-length`: methods 1, 2, 4, 5, 6 + ranking; suggestion list + ghost lines | 3 | ☐ |
 | R.10 | Method 3 (known loops) and the "known ground" score from the user's own tracks | 3 | ☐ |
 | R.11 | New loop from a start point + target length (§4.4) | 3 | ☐ |
-| R.12 | FIT course export (if §9.2 = yes) | 4 | ☐ |
+| R.12 | ~~FIT course export~~ | - | dropped 2026-10-16 (§5) |
 | R.13 | Landing screenshot of the planner with demo data (invented route, nowhere near home) | 4 | ☐ |
 
 Phase 2, the library, is useful without the engine. It could ship first while BRouter is being
@@ -289,8 +289,7 @@ set up.
 ## 9. Decisions needed from Mike
 1. **BRouter on munchlax** (Java on the Mac mini, a few hundred MB of map tiles), or the public
    openrouteservice API (simpler, but routes leave the house and it needs a key)?
-2. **FIT course export**: allow a FIT *writer* dependency (`fit-tool`), an exception to "the
-   library is read-only"? Or is GPX enough, imported via Garmin Connect?
+2. ~~**FIT course export**~~ **Decided 2026-10-16: dropped for now; GPX only** (§5).
 3. **Sharing routes between users** (e.g. with Louise): the main spec rules out sharing for now.
    Keep routes strictly private in v1?
 4. **"Known ground" by default**: prefer suggestions on paths you have used before, or prefer
