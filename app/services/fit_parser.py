@@ -236,7 +236,8 @@ def _device_update(devices: dict, v: dict) -> None:
         'manufacturer': text(v.get('manufacturer')),
         'product': text(first(v, 'garmin_product', 'product', 'product_name')),
         'serial': text(v.get('serial_number')),
-        'device_type': text(first(v, 'antplus_device_type', 'ant_device_type', 'device_type')),
+        # The profile names the type per connection (subfields of device_type, keyed by source_type).
+        'device_type': text(first(v, 'antplus_device_type', 'ant_device_type', 'local_device_type', 'ble_device_type', 'device_type')),
         'source_type': text(v.get('source_type')),
         'sw_version': text(v.get('software_version')),
         'battery_status': text(v.get('battery_status')),

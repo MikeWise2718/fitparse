@@ -5,6 +5,11 @@ from fitparse.utils import scrub_method_name, is_iterable
 UTC_REFERENCE = 631065600  # timestamp for UTC 00:00 Dec 31 1989
 
 
+def _utc_naive(seconds):
+    # The same naive-UTC datetime utcfromtimestamp() returned; that is deprecated from Python 3.12.
+    return datetime.datetime.fromtimestamp(seconds, datetime.timezone.utc).replace(tzinfo=None)
+
+
 class FitFileDataProcessor:
     # TODO: Document API
     # Functions that will be called to do the processing:
@@ -70,7 +75,7 @@ class FitFileDataProcessor:
     def process_type_date_time(self, field_data):
         value = field_data.value
         if value is not None and value >= 0x10000000:
-            field_data.value = datetime.datetime.utcfromtimestamp(UTC_REFERENCE + value)
+            field_data.value = _utc_naive(UTC_REFERENCE + value)
             field_data.units = None  # Units were 's', set to None
 
     def process_type_local_date_time(self, field_data):
@@ -78,7 +83,7 @@ class FitFileDataProcessor:
             # NOTE: This value was created on the device using it's local timezone.
             #       Unless we know that timezone, this value won't be correct. However, if we
             #       assume UTC, at least it'll be consistent.
-            field_data.value = datetime.datetime.utcfromtimestamp(UTC_REFERENCE + field_data.value)
+            field_data.value = _utc_naive(UTC_REFERENCE + field_data.value)
             field_data.units = None
 
     def process_type_localtime_into_day(self, field_data):

@@ -473,9 +473,9 @@ queue, per-user Garmin egress) — explicitly not designed for.
 | 3.2 | Sport panels: run dynamics, bike pedalling/power curve, swim lengths, strength sets | 3 | ✅ |
 | 3.3 | `fitness.py`: CTL/ATL/TSB, volume buckets; Dashboard | 3 | ✅ |
 | 3.4 | Trends tab; Body & zones tab; Gear tab | 3 | ✅ |
-| 4.1 | Regenerate `fitparse/profile.py` from the current FIT SDK; re-run survey, see which `unknown_*` get names (expect `time_in_zone`) | 4 Depth | ☐ |
+| 4.1 | Regenerate `fitparse/profile.py` from the current FIT SDK; re-run survey, see which `unknown_*` get names (expect `time_in_zone`) | 4 Depth | ✅ 2026-10-17: profile **21.218** (was 20.8, 2019): 216 types, 125 messages (was 161 / 85). Generated from Garmin's open `fit-python-sdk` by `scripts/generate_profile_from_sdk.py` (the SDK zip is behind a licence click). Newly named in Mike's files: `time_in_zone` (216), `split`, `split_summary`; products and built-in sensor types now have names. Still unnamed there: 22, 125, 140 (VO2 max), 147, 233, 324-327 |
 | 4.2 | Research remaining Garmin-private messages (140, 79, 141, 233 …) → `docs/garmin-unknown-messages-research.md` with citations, *before* coding against them | 4 | ☐ |
-| 4.3 | Surface what 4.1/4.2 unlock (recovery time, training status, device time-in-zone …) | 4 | ☐ |
+| 4.3 | Surface what 4.1/4.2 unlock (recovery time, training status, device time-in-zone …) | 4 | ☐ `time_in_zone` is named since 4.1; the rest waits on 4.2 |
 | 5.1 | Settings tab complete; mobile `@media (max-width: 480px)` pass | 5 Ship | ◐ written, not checked on a phone |
 | 5.2 | Deploy per `D:\hw\pokeflute\docs\deploying-a-new-munchlax-service.md`; `~/services-registry/fitmon.json`; `tools/deploy.sh`; launchd units for web + job worker | 5 | ✅ deployed 2026-09-21: web, worker, nightly sync and backup LaunchDaemons on munchlax; registry entry; see `docs/fitmon-deploy.md` |
 | 5.3 | (2026-09-19: no `tailscale` CLI on munchlax's SSH PATH or in `/Applications/Tailscale.app` - find or install it first) `tailscale serve` HTTPS front on munchlax, `ProxyFix`, `public_base_url`, always-`Secure` cookies; **verify a shared-node guest can reach it**; document guest onboarding in `docs/guest-onboarding.md` | 5 | ☐ |
@@ -492,7 +492,7 @@ gets an account until A.1–A.5 and the Tailscale HTTPS front (5.3) are done.
 
 ---
 
-### 8.2 Build log - 2026-09-22 to 2026-10-16 (v0.4.4 - v0.6.5)
+### 8.2 Build log - 2026-09-22 to 2026-10-16 (v0.4.4 - v0.7.0)
 
 Versions before 0.4.4 are in `git log`. From there, all deployed to munchlax:
 
@@ -514,6 +514,7 @@ Versions before 0.4.4 are in `git log`. From there, all deployed to munchlax:
 | 0.6.1-0.6.3 | Route suggestions: cached, grouped by length (5 %), twice is a route, Show all; click a route's title to rename it |
 | 0.6.4 | Every chart whose dots are activities opens the activity on click; Ctrl/Cmd/Shift-click or middle-click opens it in a new tab (Trends: VO2 max, economy, efficiency, training effect, swim, records, power curve; a route's times) |
 | 0.6.5 | Devices used: each row says which physical device it is part of (the watch, or e.g. a chest strap by serial) and what it is for; built-in and ANT+/BLE sensor types named where the bundled FIT profile only has numbers |
+| 0.7.0 | **FIT profile 21.218** (task 4.1): products and built-in sensors named (Epix Pro (Gen 2) 42 mm, HRM-Pro Plus, barometer...); `SCHEMA_VERSION` 2, so the worker needs a restart and a re-index; deprecated `utcfromtimestamp` replaced |
 
 Data corrections made on munchlax 2026-10-15: the 70.3 run leg trimmed at the official split
 3:10:01; a 2022 gravel ride saved as a run changed to cycling (it held the 400 m / 1 km / mile

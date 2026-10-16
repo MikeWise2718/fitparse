@@ -31,6 +31,15 @@ def test_parses_swim_with_sub_sport_lengths_profile_and_devices():
     assert any(d.get('device_index') == 'creator' for d in parsed.devices)
 
 
+def test_devices_are_named_by_the_current_fit_profile():
+    """Profile 21.218 (2026-10-17) names products and the watch's built-in sensors, which 20.8
+    knew only as numbers. The built-in ones arrive as the local_device_type subfield."""
+    parsed = parse_fit_file(SAMPLE_SWIM)
+    assert parsed.meta['product'] == 'fr745'
+    local = {d.get('device_type') for d in parsed.devices if d.get('source_type') == 'local'}
+    assert {'barometer', 'whr', 'sensor_hub'} <= local
+
+
 def test_vo2max_from_private_message():
     sess = parse_fit_file(SAMPLE_VO2).sessions[0]
     assert sess['vo2max'] == 62.63

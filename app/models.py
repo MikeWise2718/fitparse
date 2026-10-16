@@ -16,7 +16,8 @@ from sqlalchemy.engine import Engine
 
 db = SQLAlchemy()
 
-SCHEMA_VERSION = 1
+# 2: FIT profile 21.218 (2026-10-17) - products and built-in device types are stored by name.
+SCHEMA_VERSION = 2
 
 
 @event.listens_for(Engine, 'connect')

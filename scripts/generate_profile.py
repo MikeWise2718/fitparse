@@ -17,8 +17,6 @@ import re
 import sys
 import zipfile
 
-import xlrd  # Dev requirement for parsing Excel spreadsheet
-
 
 FIELD_NUM_TIMESTAMP = 253
 
@@ -333,6 +331,7 @@ def parse_csv_fields(data, num_expected):
 
 
 def parse_spreadsheet(xls_file, *sheet_names):
+    import xlrd  # Dev requirement for parsing Excel spreadsheet (not needed by generate_profile_from_sdk.py)
     if isinstance(xls_file, str):
         workbook = xlrd.open_workbook(xls_file)
     else:
@@ -558,7 +557,11 @@ def main(input_xls_or_zip, output_py_path=None):
     types_rows, messages_rows = parse_spreadsheet(xls_file, 'Types', 'Messages')
     type_list = parse_types(types_rows)
     message_list = parse_messages(messages_rows, type_list)
+    write_profile(type_list, message_list, profile_version, output_py_path)
 
+
+def write_profile(type_list, message_list, profile_version, output_py_path=None):
+    """Render the parsed types and messages as profile.py (shared with generate_profile_from_sdk.py)."""
     mesg_num_declarations = []
     for mesg_name in MESSAGE_NUM_DECLARATIONS:
         mesg_info = message_list.get_by_name(mesg_name)
@@ -608,7 +611,7 @@ def main(input_xls_or_zip, output_py_path=None):
     # fields to actual field objects? Would clean up accesses to these
 
     if output_py_path:
-        open(output_py_path, 'w').write(output)
+        open(output_py_path, 'w', encoding='utf-8').write(output)
         print('Profile version {} written to {}'.format(
             profile_version if profile_version else '<unknown>',
             output_py_path))

@@ -119,6 +119,21 @@ const fmt = {
     window(kind, w) { if (kind === 'power') return w < 60 ? `${w} s` : `${w / 60} min`;
              return {400: '400 m', 1000: '1 km', 1609: '1 mile', 5000: '5 km', 10000: '10 km', 21097: 'half marathon', 42195: 'marathon'}[w] || `${w} m`; },
 };
+// Product names as the FIT profile spells them, made readable. Files indexed before profile 21.218
+// (2026-10-17) still hold the number, until they are re-indexed.
+const PRODUCT_NAMES = {epix_gen2_pro_42: 'Epix Pro (Gen 2) 42 mm', epix_gen2_pro_47: 'Epix Pro (Gen 2) 47 mm', epix_gen2_pro_51: 'Epix Pro (Gen 2) 51 mm',
+    epix_gen2: 'Epix (Gen 2)', hrm_pro_plus: 'HRM-Pro Plus', hrm_pro: 'HRM-Pro', gnss: 'GNSS receiver', swim2: 'Swim 2', connect: 'Garmin Connect'};
+function productName(manufacturer, product) {
+    const p = product == null ? '' : String(product);
+    let name = PRODUCT_NAMES[p];
+    if (!name && p && !/^\d+$/.test(p)) {
+        name = p.replace(/^fr(\d)/, 'Forerunner $1').replace(/^hrm_/, 'HRM-').replace(/_/g, ' ')
+            .replace(/\b([a-z])/g, (m) => m.toUpperCase()).replace(/(\d)(xt|lte)\b/gi, (m, d, x) => d + x.toUpperCase())
+            .replace(/\b(Xt|Lte)\b/g, (m) => m.toUpperCase());
+    }
+    const mfr = manufacturer ? String(manufacturer).replace(/_/g, ' ').replace(/^\w/, (m) => m.toUpperCase()) : '';
+    return [mfr, name || p].filter(Boolean).join(' ');
+}
 const tag = (s, sub) => `<span class="tag ${esc(s)}">${esc(fmt.sport(s, sub))}</span>`;
 const tile = (label, value, sub = '', cls = '', help = '') => `<div class="tile"${help ? ` title="${esc(help)}"` : ''}><div class="label">${esc(label)}${help ? ' <span class="muted" style="cursor:help">ⓘ</span>' : ''}</div><div class="value ${cls}">${value || '–'}</div><div class="sub">${sub}</div></div>`;
 
@@ -395,7 +410,7 @@ async function loadDetail(id) {
     const d = await api(`/api/sessions/${id}`); if (!d._ok) { go('activities'); return; }
     const s = d.session; state.session = d; state.track = null; applyPanelLayout();
     $('det-title').innerHTML = `${tag(s.sport, s.sub_sport)} ${esc(s.name || '')}`;
-    $('det-when').textContent = `${fmt.when(s.start_time, d.file.utc_offset_s)} · ${d.file.product || d.file.manufacturer || ''} · ${d.file.name || ''}`;
+    $('det-when').textContent = `${fmt.when(s.start_time, d.file.utc_offset_s)} · ${productName(d.file.manufacturer, d.file.product)} · ${d.file.name || ''}`;
     $('det-legs').innerHTML = d.siblings.length > 1 ? d.siblings.map((x) => `<a data-leg="${x.id}" style="${x.id === s.id ? 'font-weight:700' : ''}">${esc(fmt.sport(x.sport, x.sub_sport))} ${fmt.dur(x.timer_s)}</a>`).join(' · ') : '';
     $('det-legs').querySelectorAll('a').forEach((a) => a.addEventListener('click', () => go('detail', a.dataset.leg)));
     $('det-banner').innerHTML = (d.file.parse_status !== 'ok' ? `<div class="banner">This file could only be read partly: <code>${esc(d.file.parse_error)}</code>. Totals and samples up to that point are shown.</div>` : '')
@@ -446,7 +461,7 @@ async function loadDetail(id) {
         {label: 'Climb', num: 1, get: (l) => fmt.elev(l.ascent_m)}, {label: 'Type', get: (l) => [l.intensity, l.swim_stroke, l.trigger].filter(Boolean).join(' · ')}];
     table('det-laps', lapCols, d.laps);
     const devs = describeDevices(d.devices.filter((x) => x.product || x.device_type || x.serial));
-    table('det-devices', [{label: 'Device', get: (x) => [x.manufacturer, x.product].filter(Boolean).join(' ') || ''},
+    table('det-devices', [{label: 'Device', get: (x) => productName(x.manufacturer, x.product)},
         {label: 'Part of', get: (x) => x._package}, {label: 'What it is', get: (x) => x._what}, {label: 'What it is for (best guess)', get: (x) => x._for},
         {label: 'Serial', get: (x) => x.serial}, {label: 'Firmware', get: (x) => x.sw_version}, {label: 'Battery', html: (x) => x.battery_status ? `<span class="tag ${['low', 'critical'].includes(x.battery_status) ? 'bad' : 'good'}">${esc(x.battery_status)}</span> ${x.battery_voltage ? fmt.num(x.battery_voltage, 2) + ' V' : ''}` : ''}],
         devs);
@@ -649,8 +664,12 @@ const LOCAL_SENSOR = {0: ['GPS receiver', 'position, speed and distance outdoors
     2: ['GPS + GLONASS receiver', 'satellite positioning'], 3: ['accelerometer', 'steps and cadence; pace and distance indoors; swim strokes and turns'],
     4: ['barometer', 'altitude and climb'], 5: ['temperature sensor', 'wrist temperature'], 10: ['optical heart-rate sensor', 'heart rate at the wrist'],
     12: ['sensor hub', 'the chip that runs the built-in sensors']};
+['gps', 'glonass', 'gps_glonass', 'accelerometer', 'barometer', 'temperature', 'whr', 'sensor_hub'].forEach((name, i) => {
+    LOCAL_SENSOR[name] = LOCAL_SENSOR[[0, 1, 2, 3, 4, 5, 10, 12][i]]; });
 const ANT_SENSOR = {heart_rate: ['heart rate', 'heart rate'], stride_speed_distance: ['speed and distance', 'pace, distance and cadence (foot pod, or a strap that counts steps)'],
-    30: ['running dynamics', 'ground contact time and balance, vertical oscillation, stride length'], running_dynamics: ['running dynamics', 'ground contact time and balance, vertical oscillation, stride length'],
+    // Not in Garmin's public FIT profile (checked against 21.218): a Garmin-private type. An HRM-Pro sends
+    // it alongside heart rate and speed, and running dynamics are what it adds, hence the guess.
+    30: ['type 30 (Garmin-private)', 'probably running dynamics: ground contact time and balance, vertical oscillation, stride length'],
     bike_power: ['power', 'power, often cadence and left/right balance'], bike_speed_cadence: ['speed and cadence', 'wheel speed and pedalling cadence'],
     bike_speed: ['speed', 'wheel speed'], bike_cadence: ['cadence', 'pedalling cadence'], fitness_equipment: ['fitness equipment (FE-C)', 'indoor trainer or gym machine: power, speed, resistance'],
     env_sensor: ['environment sensor', 'air temperature (e.g. Tempe)'], environment_sensor_legacy: ['environment sensor', 'air temperature (e.g. Tempe)'],
@@ -660,9 +679,11 @@ const ANT_SENSOR = {heart_rate: ['heart rate', 'heart rate'], stride_speed_dista
 const BLE_SENSOR = {0: ['GPS', 'position from a connected device'], 1: ['heart rate', 'heart rate'], 2: ['power', 'power, often cadence'],
     3: ['speed and cadence', 'wheel speed and pedalling cadence'], 4: ['speed', 'wheel speed'], 5: ['cadence', 'pedalling cadence'],
     6: ['foot pod', 'pace, distance and cadence'], 7: ['indoor trainer', 'power, speed, resistance']};
+['connected_gps', 'heart_rate', 'bike_power', 'bike_speed_cadence', 'bike_speed', 'bike_cadence', 'footpod', 'bike_trainer'].forEach((name, i) => {
+    BLE_SENSOR[name] = BLE_SENSOR[i]; });
 function describeDevices(rows) {
     const creator = rows.find((x) => x.device_index === 'creator');
-    const watchSerial = creator && creator.serial, watchName = creator ? `watch (${[creator.manufacturer, creator.product].filter(Boolean).join(' ')})` : 'watch';
+    const watchSerial = creator && creator.serial, watchName = creator ? `watch (${productName(creator.manufacturer, creator.product)})` : 'watch';
     const kind = (x) => {
         if (x.device_index === 'creator') return ['the watch itself', 'records the activity'];
         const t = x.device_type, table = x.source_type === 'local' ? LOCAL_SENSOR : x.source_type === 'bluetooth_low_energy' ? BLE_SENSOR : ANT_SENSOR;
@@ -680,7 +701,7 @@ function describeDevices(rows) {
     return rows.map((x) => {
         const [what, purpose] = kind(x);
         const builtIn = x.device_index === 'creator' || x.source_type === 'local' || (watchSerial && x.serial === watchSerial);
-        const product = [x.manufacturer, x.product].filter(Boolean).join(' ');
+        const product = productName(x.manufacturer, x.product);
         const pkg = builtIn ? watchName : x.serial ? `${gadget(bySerial[x.serial] || [])}${product ? ` (${product})` : ''} · …${String(x.serial).slice(-4)}`
             : product || 'unknown';
         return {...x, _package: pkg, _what: what, _for: purpose};
@@ -903,7 +924,7 @@ async function loadBody() {
     table('body-power-zones', [{label: 'Power zone', get: (z) => `Z${z.n}`}, {label: 'W', get: (z) => z.r}], ftp ? pB.map((lo, i) => ({n: i + 1, r: i < 6 ? `${Math.round(lo * ftp)} – ${Math.round(pB[i + 1] * ftp)}` : `> ${Math.round(lo * ftp)}`})) : []);
 }
 async function loadGear() { const g = await api('/api/gear');
-    table('gear-table', [{label: 'Device', html: (d) => `<b>${esc([d.manufacturer, d.product].filter(Boolean).join(' ') || d.device_type || 'unknown')}</b>${d.is_watch ? ' <span class="tag">recorder</span>' : ''}`}, {label: 'Type', get: (d) => fmt.sport(d.device_type)}, {label: 'Serial', get: (d) => d.serial},
+    table('gear-table', [{label: 'Device', html: (d) => `<b>${esc(productName(d.manufacturer, d.product) || d.device_type || 'unknown')}</b>${d.is_watch ? ' <span class="tag">recorder</span>' : ''}`}, {label: 'Type', get: (d) => fmt.sport(d.device_type)}, {label: 'Serial', get: (d) => d.serial},
         {label: 'Activities', num: 1, get: (d) => d.activities}, {label: 'First seen', get: (d) => fmt.day(d.first_seen)}, {label: 'Last seen', get: (d) => fmt.day(d.last_seen)},
         {label: 'Firmware', get: (d) => d.firmware.map((f) => f.version).slice(-3).join(' → ')}, {label: 'Battery', html: (d) => d.battery_now ? `<span class="tag ${['low', 'critical'].includes(d.battery_now.status) ? 'bad' : 'good'}">${esc(d.battery_now.status || 'ok')}</span> ${d.battery_now.voltage ? fmt.num(d.battery_now.voltage, 2) + ' V' : ''}` : ''},
         {label: 'Hours used', num: 1, get: (d) => d.operating_time_s ? Math.round(d.operating_time_s / 3600) : ''}], g.devices); }
@@ -917,7 +938,7 @@ async function loadExplorer(fileId) {
 async function openExplorerFile(id) {
     state.exp.file = id; state.exp.message = null; $('exp-crc-result').textContent = '';
     const d = await api(`/api/explorer/${id}/messages`); if (!d._ok) return;
-    $('exp-header').innerHTML = `${esc(d.file.manufacturer || '')} ${esc(d.file.product || '')} · serial ${esc(d.file.serial_number || '–')}<br>FIT protocol ${esc(d.header.protocol_version)}, profile ${esc(d.header.profile_version)} · ${fmt.bytes(d.header.file_size)}` + (d.file.parse_status !== 'ok' ? `<br><span class="tag ${esc(d.file.parse_status)}">${esc(d.file.parse_status)}</span> ${esc(d.file.parse_error)}` : '');
+    $('exp-header').innerHTML = `${esc(productName(d.file.manufacturer, d.file.product))} · serial ${esc(d.file.serial_number || '–')}<br>FIT protocol ${esc(d.header.protocol_version)}, profile ${esc(d.header.profile_version)} · ${fmt.bytes(d.header.file_size)}` + (d.file.parse_status !== 'ok' ? `<br><span class="tag ${esc(d.file.parse_status)}">${esc(d.file.parse_status)}</span> ${esc(d.file.parse_error)}` : '');
     table('exp-messages', [{label: 'Message', html: (m) => `<span class="${m.unknown ? 'unknown' : ''}">${esc(m.name)}</span>`}, {label: 'Rows', num: 1, get: (m) => m.count}], d.messages, (m) => { state.exp.message = m.name; state.exp.page = 1; loadExplorerRows(); });
     $('exp-rows').innerHTML = ''; $('exp-title').textContent = 'Pick a message type'; $('exp-count').textContent = ''; $('exp-chart-wrap').style.display = 'none';
 }

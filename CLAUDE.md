@@ -33,10 +33,20 @@ flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statist
 ```
 
 ### Updating the FIT Profile
-When a new ANT FIT SDK is released:
+`fitparse/profile.py` is generated (currently from FIT SDK **21.218**, 2026-10-17). The SDK zip
+with `Profile.xlsx` sits behind a licence click-through on developer.garmin.com, so generate it
+from Garmin's open Python SDK instead, which carries the same profile as a dict (same FIT Protocol
+License):
 ```bash
-python3 scripts/generate_profile.py /path/to/fit_sdk.zip fitparse/profile.py
+curl -L -o sdk.tar.gz https://github.com/garmin/fit-python-sdk/archive/refs/tags/<version>.tar.gz
+tar xzf sdk.tar.gz
+python scripts/generate_profile_from_sdk.py fit-python-sdk-<version>/garmin_fit_sdk/profile.py fitparse/profile.py
 ```
+It reuses `generate_profile.py`'s renderer, so the output has the same shape. Run both test suites
+afterwards, and check that `app/services/fit_parser.py` still finds what it reads by name: it
+relies on `unknown_140` (VO2 max), which 21.218 still leaves unnamed. The old route still works
+with an SDK zip: `python scripts/generate_profile.py /path/to/fit_sdk.zip fitparse/profile.py`
+(needs `xlrd`).
 
 ### CLI Tool
 ```bash
