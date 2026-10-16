@@ -1,8 +1,9 @@
 # Deploying fitmon to munchlax
 
 Follows the fleet guide (`D:\hw\pokeflute\docs\deploying-a-new-munchlax-service.md`); this file
-only records what is specific to fitmon. Two ports are reserved in pokeflute's `ports.json`:
-**8640** for the app and **8641** for its HTTPS front (`fitmon-https`).
+only records what is specific to fitmon. Three ports are reserved in pokeflute's `ports.json`:
+**8640** for the app, **8641** for its HTTPS front (`fitmon-https`) and **8642** for the route
+planner's engine (`fitmon-brouter`, loopback only).
 
 Status: **deployed 2026-09-21.** Live at **https://munchlax.taild34695.ts.net:8641** (tailnet
 only; it was `:8640` until 2026-09-23 — see "HTTPS front door" for why it moved). All four units run as system LaunchDaemons: web, worker, nightly sync, nightly backup.
@@ -15,6 +16,8 @@ only; it was `:8640` until 2026-09-23 — see "HTTPS front door" for why it move
 | `com.fitmon.worker` | `deploy/run-fitmon-worker.sh` → `fitmon-worker` | **yes**, when parsing / import / sync code changed |
 | `com.fitmon.sync` (04:10) | `deploy/run-fitmon-sync.sh` → `fitmon-sync run --queue --health` | – |
 | `com.fitmon.backup` (04:50) | `deploy/run-fitmon-backup.sh` → snapshot + rsync to snorlax | – |
+| `com.fitmon.brouter` | `deploy/brouter/run-brouter.sh` → BRouter on `127.0.0.1:8642` (KeepAlive) | no — it holds no fitmon code |
+| `com.fitmon.brouter-tiles` (2nd of the month, 03:40) | `deploy/brouter/setup-brouter.sh` → newer map tiles, then BRouter restarts itself | – |
 
 Code: `~/projects/fitparse/`. Runtime data: `~/fitmon/` (db, FIT originals, logs, keys, per-user
 settings, encrypted Garmin tokens). Optional overrides: `~/.fitmon/env`. Logs of the launchd
@@ -52,6 +55,34 @@ done
 # 6. register with pokeflute + verify
 deploy/deploy.sh
 ```
+
+## Route planner engine: BRouter
+
+The planner (specs/route-planner.md) routes with [BRouter](https://github.com/abrensch/brouter)
+running on munchlax, so planned routes - and with them everyone's home address - never leave
+the house. It is a Java server on **loopback port 8642**; only fitmon calls it, so it is not
+registered with pokeflute. Everything lives in `~/brouter` and runs as mike: a private Java 21
+runtime (no Homebrew), the BRouter release, and the two OpenStreetMap tiles around Langen
+(`E5_N45`, `E5_N50`, about 435 MB). Without it the library, GPX and route history still work;
+the planner says the engine is down.
+
+```bash
+# 1. install (no sudo; downloads ~500 MB; re-run any time)
+ssh munchlax "bash ~/projects/fitparse/deploy/brouter/setup-brouter.sh"
+# 2. the daemon and the monthly tile refresh: open a shell, then type these there
+ssh -t munchlax
+sudo cp ~/projects/fitparse/deploy/com.fitmon.brouter.plist ~/projects/fitparse/deploy/com.fitmon.brouter-tiles.plist /Library/LaunchDaemons/
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.fitmon.brouter.plist
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.fitmon.brouter-tiles.plist
+# 3. check: a route from Langen to Egelsbach
+ssh munchlax "curl -s 'http://127.0.0.1:8642/brouter?lonlats=8.667,49.994|8.645,49.967&profile=trekking&format=geojson' | head -c 300"
+```
+
+Routes for running use BRouter's `hiking-mountain` profile (BRouter ships no running profile),
+cycling `fastbike` / `gravel` / `mtb` / `trekking` (`app/routing/brouter.py: PROFILES`). To tune
+one, copy it into `~/brouter/customprofiles/` under a new name and point `PROFILES` at it. Routes
+further away need more tiles: add their names to `BROUTER_TILES` (the 5x5-degree grid at
+brouter.de/brouter/segments4) and re-run the setup.
 
 ## HTTPS front door: Tailscale
 
@@ -169,6 +200,7 @@ ssh munchlax    'cd ~/projects/fitparse && /opt/homebrew/bin/uv run fitmon-sync 
 |---|---|
 | Deploy | `git push`, then `deploy/deploy.sh` |
 | Restart worker | `ssh -t munchlax 'sudo launchctl kickstart -k system/com.fitmon.worker'` |
+| Restart the route engine | `ssh munchlax "pkill -f btools.server.RouteServer"` (launchd starts it again) |
 | Forgotten password | `ssh -t munchlax 'cd ~/projects/fitparse && /opt/homebrew/bin/uv run fitmon-admin reset-password -u NAME'` |
 | Who is connected to Garmin | `uv run fitmon-sync status` |
 | What happened | `~/fitmon/logs/events.jsonl` (also Admin → Events) |

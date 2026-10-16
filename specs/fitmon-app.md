@@ -492,7 +492,7 @@ gets an account until A.1–A.5 and the Tailscale HTTPS front (5.3) are done.
 
 ---
 
-### 8.2 Build log - 2026-09-22 to 2026-10-15 (v0.4.4 - v0.5.2)
+### 8.2 Build log - 2026-09-22 to 2026-10-16 (v0.4.4 - v0.6.0)
 
 Versions before 0.4.4 are in `git log`. From there, all deployed to munchlax:
 
@@ -510,6 +510,7 @@ Versions before 0.4.4 are in `git log`. From there, all deployed to munchlax:
 | 0.5.0 | **Activity playback** (one clock: map marker + cursor on every graph, click to jump, keys) and **movable, collapsible panels** (layout saved per user) |
 | 0.5.1 | **End here** (trim at the playback point) and **Change sport** (`SessionSport`); re-index navigation fix |
 | 0.5.2 | Landing gallery: dashboard, animated real run (privacy-cut), trends |
+| 0.6.0 | **Routes tab**: route library (from activities, matched history, suggestions, GPX) and **route planner** (BRouter; drag to edit, fit to a target length, loops from a start). Own spec: `specs/route-planner.md` |
 
 Data corrections made on munchlax 2026-10-15: the 70.3 run leg trimmed at the official split
 3:10:01; a 2022 gravel ride saved as a run changed to cycling (it held the 400 m / 1 km / mile

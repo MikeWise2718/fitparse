@@ -104,14 +104,15 @@ Test FIT files are located in `tests/files/`. Many tests compare parsed output a
 # Fitmon (the web app in `app/`)
 
 Multi-user fitness-monitoring Flask app built on the library above. **Spec and task tracker:
-`specs/fitmon-app.md`** — read it first; deployment is in `docs/fitmon-deploy.md`.
+`specs/fitmon-app.md`** — read it first; deployment is in `docs/fitmon-deploy.md`. The route
+library and planner (Routes tab) have their own spec: `specs/route-planner.md`.
 
 ## Code vs. runtime data
 - **Code**: this repo (`app/`, `deploy/`, `tests/fitmon/`). On munchlax: `~/projects/fitparse/`.
 - **Runtime data**: `~/fitmon/` (override with `FITMON_HOME`) — never inside the repo.
   `data/fitmon.db` · `users/<id>/fit/` original FIT files · `users/<id>/settings.json` ·
-  `users/<id>/garmin/tokens.enc` · `users/<id>/health/` · `logs/events.jsonl` · `auth/` (generated
-  secret key + token-encryption key).
+  `users/<id>/garmin/tokens.enc` · `users/<id>/health/` · `users/<id>/routes/<uuid>.geojson` (saved
+  routes: the originals) · `logs/events.jsonl` · `auth/` (generated secret key + token-encryption key).
 - The DB is a **rebuildable index** over the original files. There are no migrations: bump
   `SCHEMA_VERSION` in `app/models.py` and re-index (Import tab, or a `reindex` job).
 
@@ -132,6 +133,11 @@ real run Mike chose (privacy-cut: first/last 500 m off the map). The FIT file is
 committed. Re-run it when the dashboard, trends or activity page change visibly.
 On spearow prefix with `env -u PYTHONHOME` (Bash) if Python fails with `SRE module mismatch`.
 
+The planner needs the BRouter engine on `127.0.0.1:8642` (`FITMON_BROUTER_URL` overrides). On a dev
+box run `deploy/brouter/setup-brouter.sh` there too (it fetches a JRE and the tiles into `~/brouter`;
+on Windows use Git Bash, or unpack them by hand), then `deploy/brouter/run-brouter.sh`. Tests never
+need it: they set `app.config['FITMON_ROUTER']` to `routing.brouter.StraightRouter()`.
+
 ## Rules that are easy to break
 - **Every query on user data starts with `auth.scoped(Model)` / `auth.get_owned(Model, id)`.**
   Another user's id is a 404. `tests/fitmon/test_scoping.py` walks every id-bearing route as the
@@ -146,9 +152,17 @@ On spearow prefix with `env -u PYTHONHOME` (Bash) if Python fails with `SRE modu
   computing metrics. In the UI, navigate with `openDetail(newId)` after one - reloading the old
   id 404s and bounces to the list.
 - The JavaScript has **no automated tests**; check UI changes in a real browser (Playwright
-  against a local copy, as `tools/screenshot.py` does).
+  against a local copy, as `tools/screenshot.py` does). The Routes views are in
+  `static/js/routes.js`, loaded before `app.js`, which hands it its helpers (`window.fitmonRoutes`).
 - Only `app/sync/client.py` imports `garminconnect` (unofficial API, pinned). Passwords are never
   stored or logged; `events.py` redacts credential-looking fields.
+- Only `app/routing/brouter.py` talks to the routing engine. Planner code (`routing/plan.py`,
+  `routing/fit.py`) takes a router object and never knows which; keep it free of Flask and the DB.
+- Routes: the GeoJSON file is the original, the `routes` table an index of it
+  (`routelib.reindex_routes`). `RouteMatch` is keyed by `(file_id, idx)` like the trims.
+  `SessionShape` (each GPS activity resampled every 25 m) is filled **lazily** by
+  `routelib.refresh()` when the Routes tab asks, not by the importer - so matching works whatever
+  code the (non-reloading) worker is running.
 - Never turn on the Werkzeug debugger (`debug=True`): other people can reach this app.
 - Bump `app/__init__.py: __version__` in every commit that changes code.
 - The top-level `fitparse.py` script is a legacy CLI that shares its name with the `fitparse/`

@@ -125,13 +125,17 @@ function showNote() { $('flt-note').textContent = [state.rangeNote, state.staleN
 const VIEWS = {dashboard: loadDashboard, activities: () => loadActivities(true), detail: loadDetail, trends: loadTrends,
                body: loadBody, gear: loadGear, explorer: loadExplorer, import: loadImport, settings: loadSettings, admin: loadAdmin,
                about: loadAbout};
+// The route library and planner live in routes.js; it borrows these helpers.
+const routesUI = window.fitmonRoutes({api, $, esc, fmt, toast, go: (v, a) => go(v, a), state, chart, statute, table});
+Object.assign(VIEWS, routesUI.views);
 function go(view, arg) { location.hash = arg != null ? `#${view}/${arg}` : `#${view}`; }
 function route() {
     const [view, arg] = (location.hash.slice(1) || 'dashboard').split('/');
     const name = VIEWS[view] ? view : 'dashboard';
     state.view = name; state.arg = arg;
     document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${name}`));
-    document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.view === (name === 'detail' ? 'activities' : name)));
+    const tab = name === 'detail' ? 'activities' : routesUI.tabFor[name] || name;
+    document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.view === tab));
     $('filters').style.display = ['dashboard', 'activities', 'trends'].includes(name) ? '' : 'none';
     clearInterval(state.poll); state.poll = null;
     if (name !== 'detail') pbStop();
@@ -364,6 +368,7 @@ async function loadDetail(id) {
         + (s.excluded ? '<div class="banner">Marked <b>not training</b>: kept here in full, but left out of load, volume, trends and records.</div>' : '')
         + (d.sport_override ? `<div class="banner">Recorded as <b>${esc(fmt.sport(d.sport_override.recorded_sport, d.sport_override.recorded_sub_sport))}</b>, changed to <b>${esc(fmt.sport(s.sport, s.sub_sport))}</b>. <button id="det-sport-undo">Restore</button></div>` : '');
     if ($('det-sport-undo')) $('det-sport-undo').addEventListener('click', () => changeSport(null));
+    routesUI.activityRoutes(s.id);
     $('det-sport').value = '';
     $('det-exclude').textContent = s.excluded ? 'Count as training' : 'Not training';
     $('det-tiles').innerHTML = [

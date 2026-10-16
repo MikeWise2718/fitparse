@@ -9,8 +9,9 @@ from werkzeug.security import check_password_hash
 
 from .. import auth
 from ..events import event_logger
-from ..models import DailyHealth, FitFile, Session, User, db
-from ..services import importer
+from ..models import DailyHealth, FitFile, Route, Session, User, db
+from ..routing import plan
+from ..services import importer, routelib
 from ..settings import user_dir
 from .api_activities import LIST_COLUMNS
 
@@ -40,6 +41,13 @@ def export():
         for h in DailyHealth.query.filter_by(user_id=g.user.id).order_by(DailyHealth.day).all():
             writer.writerow([getattr(h, c) if getattr(h, c) is not None else '' for c in cols])
         zf.writestr('daily_health.csv', out.getvalue())
+        # Routes: the original GeoJSON (re-importable here) and a GPX of each for other tools.
+        for r in auth.scoped(Route).all():
+            path = routelib.route_path(home, r)
+            if path.exists():
+                zf.write(path, f'routes/{r.uuid}.geojson')
+                zf.writestr(f'routes/gpx/{r.uuid[:8]}-{routelib.safe_filename(r.name)}.gpx',
+                            routelib.gpx(r, plan.flatten(routelib.load_plan(home, r))))
     buf.seek(0)
     event_logger.info('account.exported', f'{g.user.username} exported their data', user_id=g.user.id)
     return send_file(buf, as_attachment=True, download_name=f'fitmon-{g.user.username}.zip',

@@ -1,7 +1,9 @@
-# Fitmon: route library and route planner (design proposal)
+# Fitmon: route library and route planner
 
-Status: **proposal, 2026-10-16, not yet approved.** Nothing is built. Sections 9 and 10 are
-the decisions Mike needs to make before work starts.
+Status: **built in fitmon 0.6.0 (2026-10-16).** Proposed and approved the same day ("go ahead
+and implement it"). The decisions left open in §9 were taken as recommended. Where the build
+departs from the design below, §11 says so. Still open: the BRouter daemon on munchlax needs
+Mike's sudo (R.1), and the landing picture (R.13).
 
 Mike's request (2026-10-16): *plan routes of a particular length, usually by modifying,
 lengthening or shortening a route I have tried already*, and keep a **library of running and
@@ -232,68 +234,77 @@ knob as in brouter-web, "another one" gives a different loop.
   it needs a FIT *writer*, and the parsing library stays read-only. If it is ever wanted,
   importing the GPX by hand in Garmin Connect gets a course onto the watch without any code.
 
-## 6. Data model additions (SCHEMA_VERSION 2; re-index rebuilds them from the files)
+## 6. Data model additions (new tables only; no SCHEMA_VERSION bump, no forced re-index)
 
 | Table | Columns |
 |---|---|
-| `routes` | id, user_id, uuid (file name), name, sport, kind (loop / a_b / out_back), distance_m, ascent_m, unpaved_pct, start_lat/lon, parent_id, source (activity / drawn / planned), source_file_id, source_idx, created, updated |
+| `routes` | id, user_id, uuid (file name), name, sport, kind (loop / out_back / a_b), distance_m, ascent_m, unpaved_pct, start and bbox, parent_id, source (activity / drawn / planned), source_file_id, source_idx, notes, starred, created, updated |
 | `route_matches` | route_id, file_id, idx, direction (fwd / rev), match_pct, user_id |
-| `route_suggestions` | user_id, cluster key, n_activities, sample file_id+idx, hidden |
+| `session_shapes` | session_id, file_id, idx, family (foot / bike), distance, start, bbox, the line every 25 m, `matched` |
+| `route_suggestions_hidden` | user_id, key (the cluster's representative file_id:idx) |
 
-The GeoJSON file holds the full line (lon, lat, ele), the control points with the profile used
-for each leg, name, notes and tags. That way the file alone can rebuild its row.
+The GeoJSON file holds the full line (lon, lat, ele) and the planner's segment chain
+(`routing/plan.py`: recorded `track`, engine-`routed` or straight `line` pieces), name, notes,
+the parent's uuid and the source FIT file's sha256. That way the file alone can rebuild its
+row (`routelib.reindex_routes`). Suggestions are computed on request, not stored.
 
 ## 7. API (all JSON, all scoped, writes need CSRF)
 
+As built (POST for every change, like the rest of fitmon, so the cross-user test covers them):
+
 ```
-GET    /api/routes                       list (filters: sport, length range, q)
-POST   /api/routes                       create (from activity, from planner result, drawn)
-GET    /api/routes/<id>                  route + matches + stats
-PATCH  /api/routes/<id>                  rename, notes, tags, new geometry
-DELETE /api/routes/<id>
-GET    /api/routes/<id>.gpx              export
-POST   /api/routes/from-session/<id>     save activity as route (snaps + simplifies the GPS line)
-POST   /api/plan/segment                 route between control points (one leg) → line + stats
-POST   /api/plan/fit-length              {route, target_m, tolerance, prefer} → candidates[]
-POST   /api/plan/loop                    {start, target_m, sport, rotation} → candidate
-GET    /api/routes/suggestions           ·  POST /api/routes/suggestions/<key>/hide
+GET  /api/routes                       list (sport, q) + `pending`: activities still to compare
+GET  /api/routes/lines                 every route's line, thinned, for the overview map
+POST /api/routes                       create {name, sport, plan, parent_id, notes}
+GET  /api/routes/<id>                  route, plan, stats, elevation, history, variants, parent
+POST /api/routes/<id>/update           name, sport, notes, starred, parent_id, plan
+POST /api/routes/<id>/delete           variants move up to the deleted route's parent
+POST /api/routes/<id>/rematch          compare all activities with it again
+GET  /api/routes/<id>/gpx              export
+POST /api/routes/from-session/<id>     save an activity's GPS line as a route
+GET  /api/routes/suggestions           ·  POST /api/routes/suggestions/hide {key}
+GET  /api/sessions/<id>/routes         which routes an activity followed; can it be saved
+GET  /api/plan/status                  is the engine up
+POST /api/plan/edit                    {plan, op: drag|move|delete|append|close|reverse|truncate}
+POST /api/plan/fit                     {plan, target_m, tolerance_pct, sport} → candidates[]
+POST /api/plan/loop                    {start, target_m, sport, rotation} → 3 candidates
 ```
 
-`fit-length` makes ~30–60 BRouter calls. Locally that is a second or two, so it runs **in the
-request** with a hard time limit (8 s) and returns whatever candidates are done by then. It is
-interactive, like the single-file re-index, and not bulk work. The matching and clustering jobs
-go to the worker.
+`fit` makes ~30–60 BRouter calls, four at a time. Against the local engine that measured
+0.3–0.5 s for a 10 km run (spearow, 2026-10-16). So it runs **in the request**, with an 8 s
+limit, and returns whatever candidates are done by then. Matching and suggestions also run in
+requests, not the worker (§11).
 
 ## 8. Phases and task tracker
 
 | # | Task | Phase | Status |
 |---|---|---|---|
-| R.0 | Decisions in §9 | 0 | ☐ waiting for Mike |
-| R.1 | Claim BRouter port; Java + BRouter server + `E5_N45`/`E5_N50` tiles on munchlax; launchd service + monthly tile refresh; doc in `docs/fitmon-deploy.md` | 1 Engine | ☐ |
-| R.2 | `app/routing/brouter.py` client + fitmon profiles (run / road / gravel); tests against recorded responses | 1 | ☐ |
-| R.3 | `routes` table + GeoJSON files + re-index; CRUD API; scoping test entries | 2 Library | ☐ |
-| R.4 | "Save as route" from an activity (simplify, keep the GPS line); Routes tab list + map; route page | 2 | ☐ |
-| R.5 | Activity↔route matching (worker job on import and on route save); stats and the times-on-route chart | 2 | ☐ |
-| R.6 | Suggested routes (clustering repeated activities), weekly job | 2 | ☐ |
-| R.7 | GPX export | 2 | ☐ |
-| R.8 | Planner editor: control points, drag-to-reroute, undo/redo, elevation strip, save / save as variant | 3 Planner | ☐ |
-| R.9 | `fit-length`: methods 1, 2, 4, 5, 6 + ranking; suggestion list + ghost lines | 3 | ☐ |
-| R.10 | Method 3 (known loops) and the "known ground" score from the user's own tracks | 3 | ☐ |
-| R.11 | New loop from a start point + target length (§4.4) | 3 | ☐ |
+| R.0 | Decisions in §9 | 0 | ✅ taken as recommended (§9) |
+| R.1 | Claim BRouter port; Java + BRouter server + `E5_N45`/`E5_N50` tiles on munchlax; launchd service + monthly tile refresh; doc in `docs/fitmon-deploy.md` | 1 Engine | ◐ port 8642 claimed in pokeflute (2026-10-16); `deploy/brouter/`, both plists and the deploy doc are written; **the daemon install needs Mike's sudo** |
+| R.2 | `app/routing/brouter.py` client + fitmon profiles; tests against a recorded reply | 1 | ✅ run/hike → hiking-mountain, road → fastbike, gravel, mtb, bike → trekking; % unpaved and busy-road share from way tags |
+| R.3 | `routes` table + GeoJSON files + re-index; CRUD API; scoping test entries | 2 Library | ✅ |
+| R.4 | "Save as route" from an activity (simplify, keep the GPS line); Routes tab list + map; route page | 2 | ✅ |
+| R.5 | Activity↔route matching; stats and the times-on-route chart | 2 | ✅ in requests, not the worker (§11) |
+| R.6 | Suggested routes (clustering repeated activities) | 2 | ✅ computed on request |
+| R.7 | GPX export | 2 | ✅ also in "download my data" |
+| R.8 | Planner editor: control points, drag-to-reroute, undo/redo, elevation strip, save / save as variant | 3 Planner | ✅ checked in Chromium (Playwright) against a local copy |
+| R.9 | `fit-length`: methods 1, 2, 4, 5, 6 + ranking; suggestion list + ghost lines | 3 | ✅ |
+| R.10 | Method 3 (known loops) and the "known ground" score from the user's own tracks | 3 | ✅ |
+| R.11 | New loop from a start point + target length (§4.4) | 3 | ✅ |
 | R.12 | ~~FIT course export~~ | - | dropped 2026-10-16 (§5) |
 | R.13 | Landing screenshot of the planner with demo data (invented route, nowhere near home) | 4 | ☐ |
 
 Phase 2, the library, is useful without the engine. It could ship first while BRouter is being
 set up.
 
-## 9. Decisions needed from Mike
-1. **BRouter on munchlax** (Java on the Mac mini, a few hundred MB of map tiles), or the public
-   openrouteservice API (simpler, but routes leave the house and it needs a key)?
-2. ~~**FIT course export**~~ **Decided 2026-10-16: dropped for now; GPX only** (§5).
-3. **Sharing routes between users** (e.g. with Louise): the main spec rules out sharing for now.
-   Keep routes strictly private in v1?
-4. **"Known ground" by default**: prefer suggestions on paths you have used before, or prefer
-   new ground?
+## 9. Decisions
+Mike said "go ahead and implement it" with 1, 3 and 4 unanswered, so they were taken as recommended.
+Each is cheap to change later.
+1. **BRouter on munchlax.** It runs with a private Java runtime in `~/brouter`, so Homebrew is untouched.
+2. **FIT course export: dropped for now; GPX only** (Mike, 2026-10-16, §5).
+3. **Routes are private**, like everything else in v1.
+4. **Familiar paths first** by default. The user setting `route_prefer` ('known' / 'new') is in the
+   settings file; it has no control in the Settings tab yet.
 
 ## 10. Open questions (to check during the work)
 - Is a Java runtime on munchlax acceptable? Homebrew `openjdk` is the easy path, and BRouter needs
@@ -302,3 +313,22 @@ set up.
   few of Mike's real runs before tuning the run profile.
 - Whether the ≥ 90% / 30 m match thresholds hold up on track runs and on GPS drift under trees.
   Tune them on Mike's history.
+
+## 11. As built: differences from the design (2026-10-16)
+- **Matching runs in requests, not in the worker.** Each GPS activity gets a `session_shape` (the
+  line every 25 m), computed from its samples the first time the Routes tab asks. Each request
+  spends at most 3 s on this, and the tab polls until it is done; Mike's ~520 GPS activities take a
+  few passes. Then new shapes are compared with the routes, and a saved route with the shapes.
+  This keeps the feature independent of the worker, which does not reload code on munchlax.
+- **Matching thresholds:** 35 m, not 30. A recorded track and a routed line along the same forest path
+  differ by 10–20 m. ≥ 90 % both ways, either direction. Candidates are pre-filtered by family
+  (foot / bike), length (0.8–1.25×) and bounding box.
+- **Editing a recorded track:** a drag re-routes 300 m either side of the grab point. On a routed
+  piece it re-routes the whole piece between its control points, as brouter-web does.
+- **Surface figures** (% unpaved) are only shown when most of the route was routed by the engine.
+  A recorded GPS track has no way tags.
+- **Loops from a start point** put three via points on a circle through the start, scaled until the
+  length fits. Each Suggest turns the circle by 60°, so pressing it again gives other loops.
+- **Lollipop** tries three headings: straight away from the start, and ±50°.
+- The run profile is BRouter's `hiking-mountain`, untuned. §10's comparison against real runs is
+  still to do.

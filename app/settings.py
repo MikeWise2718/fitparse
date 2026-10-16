@@ -19,6 +19,8 @@ USER_DEFAULTS = {
     # place) and which are collapsed. Per user, so the layout follows them between devices.
     'detail_layout': {'order': [], 'collapsed': []},
     'playback_speed': 60,         # activity playback: activity seconds per real second
+    'route_prefer': 'known',      # planner suggestions: 'known' ground first, or 'new'
+    'route_tolerance_pct': 2,     # planner: how close to the target length counts as there
     'zones': {                    # overrides; null = take from the FIT zones_target snapshots
         'max_hr': None, 'threshold_hr': None, 'resting_hr': None, 'ftp': None,
     },

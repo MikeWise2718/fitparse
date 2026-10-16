@@ -23,8 +23,12 @@ def alices_data(app, alice, import_file):
         job = jobs.enqueue(alice.user_id, 'reindex', {})
         db.session.add(GarminActivity(user_id=alice.user_id, activity_id='777', status='failed'))
         db.session.commit()
+        from app.services import routelib
+        from .test_routes import square
+        route = routelib.save(app.config['FITMON_HOME'], alice.user_id,
+                              {'name': 'loop', 'sport': 'run', 'plan': [{'kind': 'track', 'coords': square()}]})
         alice.login('alice', remember=True)
-        return {'file_id': res['file_id'], 'session_id': session.id, 'job_id': job.id,
+        return {'file_id': res['file_id'], 'session_id': session.id, 'job_id': job.id, 'route_id': route.id,
                 'token_id': DeviceToken.query.filter_by(user_id=alice.user_id).first().id,
                 'activity_id': '777', 'name': 'record', 'fmt': 'json'}
 
@@ -60,7 +64,9 @@ def test_other_users_ids_are_404(app, alice, bob, alices_data):
 def test_lists_only_show_own_rows(alice, bob, alices_data):
     for url, key in [('/api/activities', 'activities'), ('/api/explorer/files', 'files'),
                      ('/api/jobs', 'jobs'), ('/api/sports', 'sports'), ('/api/gear', 'devices'),
-                     ('/api/sync/activities', 'activities'), ('/api/import/problems', 'files')]:
+                     ('/api/sync/activities', 'activities'), ('/api/import/problems', 'files'),
+                     ('/api/routes', 'routes'), ('/api/routes/lines', 'lines'),
+                     ('/api/routes/suggestions', 'suggestions')]:
         assert bob.get(url).get_json()[key] == [], url
     assert alice.get('/api/activities').get_json()['total'] == 1
     assert bob.get('/api/dashboard').get_json()['total_sessions'] == 0

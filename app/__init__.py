@@ -7,7 +7,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from flask.json.provider import DefaultJSONProvider
 
-__version__ = '0.5.2'
+__version__ = '0.6.0'
 
 
 class _IsoJSONProvider(DefaultJSONProvider):
@@ -62,8 +62,9 @@ def create_app(home=None, testing: bool = False) -> Flask:
     from .routes.api_explorer import explorer_bp
     from .routes.api_sync import sync_bp
     from .routes.api_account import account_bp
+    from .routes.api_routes import routes_bp
     for bp in (pages_bp, core_bp, auth_bp, admin_bp, import_bp, activities_bp,
-               trends_bp, explorer_bp, sync_bp, account_bp):
+               trends_bp, explorer_bp, sync_bp, account_bp, routes_bp):
         app.register_blueprint(bp)
 
     @app.context_processor

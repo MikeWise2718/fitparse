@@ -452,6 +452,79 @@ class DailyHealth(db.Model):
     load_anaerobic = db.Column(db.Float)
 
 
+# --------------------------------------------------------------------------- route library
+
+class Route(db.Model):
+    """A saved running or cycling route. The original is the GeoJSON file
+    users/<id>/routes/<uuid>.geojson (services/routelib.py); this row indexes it and can be
+    rebuilt from the files, like the rest of the index."""
+    __tablename__ = 'routes'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    uuid = db.Column(db.String(32), nullable=False, unique=True)
+    name = db.Column(db.String(200), nullable=False)
+    sport = db.Column(db.String(16), nullable=False)        # run | hike | road | gravel | mtb | bike
+    kind = db.Column(db.String(16))                          # loop | out_back | a_b
+    distance_m = db.Column(db.Float)
+    ascent_m = db.Column(db.Float)
+    unpaved_pct = db.Column(db.Float)
+    start_lat = db.Column(db.Float)
+    start_lon = db.Column(db.Float)
+    min_lat = db.Column(db.Float)
+    min_lon = db.Column(db.Float)
+    max_lat = db.Column(db.Float)
+    max_lon = db.Column(db.Float)
+    parent_id = db.Column(db.Integer, db.ForeignKey('routes.id', ondelete='SET NULL'), index=True)
+    source = db.Column(db.String(16))                        # activity | planned | drawn
+    source_file_id = db.Column(db.Integer, db.ForeignKey('files.id', ondelete='SET NULL'))
+    source_idx = db.Column(db.Integer)
+    notes = db.Column(db.Text)
+    starred = db.Column(db.Boolean, nullable=False, default=False)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow)
+
+
+class RouteMatch(db.Model):
+    """An activity that followed a route. Keyed by (file, leg) like SessionTrim, because a
+    re-index gives sessions new ids; the matcher recomputes these whenever it is asked."""
+    __tablename__ = 'route_matches'
+    route_id = db.Column(db.Integer, db.ForeignKey('routes.id', ondelete='CASCADE'), primary_key=True)
+    file_id = db.Column(db.Integer, db.ForeignKey('files.id', ondelete='CASCADE'), primary_key=True)
+    idx = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    direction = db.Column(db.String(4))                      # fwd | rev
+    match_pct = db.Column(db.Float)
+
+
+class SessionShape(db.Model):
+    """An activity's GPS line resampled every 25 m: what route matching, suggested routes and
+    the 'ground you know' score compare, instead of re-reading every 1 Hz sample. Derived and
+    filled lazily (routelib.ensure_shapes), so a re-index simply drops and recomputes it."""
+    __tablename__ = 'session_shapes'
+    session_id = db.Column(db.Integer, db.ForeignKey('sessions.id', ondelete='CASCADE'), primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    file_id = db.Column(db.Integer, nullable=False)
+    idx = db.Column(db.Integer, nullable=False)
+    family = db.Column(db.String(8))                         # foot | bike | None (not a routable sport)
+    distance_m = db.Column(db.Float)
+    start_lat = db.Column(db.Float)
+    start_lon = db.Column(db.Float)
+    min_lat = db.Column(db.Float)
+    min_lon = db.Column(db.Float)
+    max_lat = db.Column(db.Float)
+    max_lon = db.Column(db.Float)
+    coords = db.Column(db.Text)                              # JSON [[lon, lat], ...]
+    matched = db.Column(db.Boolean, nullable=False, default=False)   # compared with the routes yet?
+
+
+class RouteSuggestionHidden(db.Model):
+    """A suggested route the person said no to ("Hide")."""
+    __tablename__ = 'route_suggestions_hidden'
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
+    key = db.Column(db.String(64), primary_key=True)
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+
 # Tables rebuilt by a reindex. Account, job and sync-state tables are not listed on purpose.
 DERIVED_TABLES = ['zone_time', 'best_efforts', 'profile_snapshots', 'devices', 'sets',
                   'lengths', 'records', 'laps', 'sessions']

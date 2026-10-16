@@ -18,6 +18,7 @@
         <a data-view="dashboard">Dashboard</a>
         <a data-view="activities">Activities</a>
         <a data-view="trends">Trends</a>
+        <a data-view="routes">Routes</a>
         <a data-view="body">Body &amp; zones</a>
         <a data-view="gear">Gear</a>
         <a data-view="explorer">Explorer</a>
@@ -119,7 +120,7 @@
             <div class="dbody" id="det-trim-body"></div></div>
     </div>
     <div class="panel row">
-        <button id="det-rename">Rename</button><button id="det-trim">Trim…</button><button id="det-exclude">Not training</button>
+        <button id="det-rename">Rename</button><button id="det-save-route" title="Keep this activity's line in the route library" hidden>Save as route</button><button id="det-trim">Trim…</button><button id="det-exclude">Not training</button>
         <select id="det-sport" title="Correct the sport, e.g. a ride the watch saved as a run">
             <option value="">Change sport…</option>
             <option value="running/generic">Running</option><option value="running/trail">Trail running</option><option value="running/treadmill">Treadmill running</option>
@@ -130,6 +131,99 @@
         </select><button id="det-explore">Open in explorer</button>
         <a id="det-download"><button>Download .fit</button></a><button id="det-reparse">Re-parse</button>
         <button id="det-delete" class="danger">Delete file</button>
+    </div>
+</section>
+
+<!-- Route library (specs/route-planner.md). Views: routes (list), route (one route), planner. -->
+<section class="view" id="view-routes">
+    <div class="panel row">
+        <h2 style="margin:0">Routes</h2>
+        <select id="rt-sport" title="Kind of route"><option value="">All kinds</option></select>
+        <input id="rt-search" placeholder="Search names and notes" style="min-width:200px">
+        <span class="muted" id="rt-pending"></span>
+        <span style="flex:1"></span>
+        <button class="primary" id="rt-new">+ New route</button>
+    </div>
+    <div class="rt-split">
+        <div class="panel rt-listpanel"><div id="rt-list"></div></div>
+        <div class="panel"><div id="rt-map" class="rt-map"></div></div>
+    </div>
+    <div class="panel" id="rt-suggest-panel" style="display:none">
+        <h2>Suggested from your activities <small>ground you have covered three or more times, not in the library yet</small></h2>
+        <div id="rt-suggest" class="rt-suggest"></div>
+    </div>
+</section>
+
+<section class="view" id="view-route">
+    <div class="row" style="margin-bottom:10px"><a data-goto="routes">← Routes</a><span id="rd-crumbs" class="muted"></span></div>
+    <div class="panel">
+        <h2><span id="rd-name"></span> <small id="rd-summary"></small></h2>
+        <div class="row">
+            <button class="primary" id="rd-edit">Edit in planner</button>
+            <span class="rt-fit">Make it <input id="rd-target" type="number" step="0.1" min="0.5"> <span class="rt-unit">km</span>
+                <button id="rd-fit">Suggest</button></span>
+            <a id="rd-gpx" title="Download as GPX: Garmin Connect, Komoot and others import it"><button>GPX ⤓</button></a>
+            <button id="rd-star" title="Starred routes are listed first">☆ Star</button>
+            <button id="rd-rename">Rename</button>
+            <select id="rd-sport" title="What the route is for: also which routing profile edits it"></select>
+            <button id="rd-delete" class="danger">Delete</button>
+        </div>
+    </div>
+    <div class="rt-split">
+        <div class="panel"><div id="rd-map" class="rt-map"></div>
+            <div class="chart short"><canvas id="rd-elev"></canvas></div></div>
+        <div class="panel"><h2>Times on this route <small id="rd-times-sub"></small></h2>
+            <div class="chart"><canvas id="rd-times"></canvas></div>
+            <div id="rd-best" class="muted"></div></div>
+    </div>
+    <div class="panel"><h2>Activities on this route</h2>
+        <div class="scroll"><table id="rd-history"></table></div>
+        <div class="row" style="margin-top:8px"><button id="rd-rematch">Look again</button>
+            <span class="muted">An activity counts when at least 90 % of it is on the route and it covers at least 90 % of the route, in either direction.</span></div></div>
+    <div class="grid two">
+        <div class="panel"><h2>Notes</h2><textarea id="rd-notes" rows="3" style="width:100%"></textarea>
+            <div class="row" style="margin-top:6px"><button id="rd-notes-save">Save notes</button></div></div>
+        <div class="panel"><h2>Variants <small>routes made from this one</small></h2><div id="rd-variants"></div></div>
+    </div>
+</section>
+
+<section class="view" id="view-planner">
+    <div class="panel pl-bar">
+        <div class="row">
+            <a id="pl-back">← Back</a> <b id="pl-title">New route</b>
+            <select id="pl-sport" title="Routing profile: which paths the planner prefers"></select>
+            <span class="pl-len" title="Length of the route as it stands"><b id="pl-length">–</b> <span id="pl-delta" class="muted"></span></span>
+            <span class="rt-fit">target <input id="pl-target" type="number" step="0.1" min="0.5"> <span class="rt-unit">km</span>
+                ± <input id="pl-tol" type="number" min="0.5" max="10" step="0.5" style="width:3.6em"> %</span>
+            <button class="primary" id="pl-suggest">Suggest</button>
+        </div>
+        <div class="row" style="margin-top:6px">
+            <button id="pl-undo" title="Undo (Ctrl+Z)">↶ Undo</button><button id="pl-redo" title="Redo (Ctrl+Y)">↷ Redo</button>
+            <button id="pl-reverse" title="Run it the other way round">Reverse</button>
+            <button id="pl-close" title="Route from the end back to the start">Close loop</button>
+            <label title="Each click on the map adds a point at the end of the route"><input type="checkbox" id="pl-draw"> Add points by clicking the map</label>
+            <span style="flex:1"></span>
+            <span class="muted" id="pl-status"></span>
+            <button id="pl-save-new" title="Keep the original and save this as a variant of it">Save as new</button>
+            <button class="primary" id="pl-save">Save</button>
+        </div>
+    </div>
+    <div id="pl-engine" class="banner bad" style="display:none">The routing engine is not running, so the planner cannot find paths.
+        Saved routes, GPX and the history still work. On munchlax: <code>sudo launchctl kickstart -k system/com.fitmon.brouter</code></div>
+    <div class="pl-split">
+        <div class="panel"><div id="pl-map" class="pl-map"></div>
+            <div class="chart short"><canvas id="pl-elev"></canvas></div></div>
+        <div class="panel pl-side">
+            <h2>Suggestions <small id="pl-cands-sub"></small></h2>
+            <div id="pl-cands" class="muted">Set a target length and press Suggest.</div>
+            <details class="pl-help" open><summary>Editing</summary>
+                <ul>
+                    <li>Drag the line to route through somewhere else.</li>
+                    <li>Drag a white point to move it; click one to delete it.</li>
+                    <li>Tick <i>Add points</i> and click the map to extend the route.</li>
+                    <li>Suggestions keep your start and finish.</li>
+                </ul></details>
+        </div>
     </div>
 </section>
 
@@ -299,6 +393,7 @@
 <script>window.FITMON = {csrf: {{ csrf|tojson }}, user: {{ user.to_dict()|tojson }}, version: {{ version|tojson }}};</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="{{ url_for('static', filename='js/routes.js') }}"></script>
 <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>
