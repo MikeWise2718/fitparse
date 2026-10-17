@@ -1017,7 +1017,7 @@ async function loadSettings() {
     const s = state.settings = await api('/api/settings');
     $('set-name').value = state.user.display_name || state.user.username;
     $('set-units').value = s.units; $('set-week').value = s.week_start; $('set-range').value = s.default_range_days; $('set-load').value = s.load_model;
-    $('set-maxhr').value = s.zones.max_hr || ''; $('set-lthr').value = s.zones.threshold_hr || ''; $('set-rhr').value = s.zones.resting_hr || ''; $('set-ftp').value = s.zones.ftp || '';
+    $('set-maxhr').value = s.zones.max_hr || ''; $('set-lthr').value = s.zones.threshold_hr || ''; $('set-rhr').value = s.zones.resting_hr || ''; $('set-ftp').value = s.zones.ftp || ''; $('set-wmin').value = s.weight_min_kg || '';
     const d = await api('/api/auth/devices');
     table('set-devices', [{label: 'Browser', get: (t) => (t.device_name || '').slice(0, 60)}, {label: 'Signed in', get: (t) => fmt.when(t.created_at)}, {label: 'Last used', get: (t) => fmt.when(t.last_used_at)}, {label: 'Expires', get: (t) => fmt.day(t.expires_at)},
         {label: '', html: (t) => t.current ? '<span class="tag good">this one</span>' : `<button data-t="${t.id}">Sign out</button>`}], d.devices);
@@ -1095,7 +1095,7 @@ function wire() {
     if ($('imp-scan')) $('imp-scan').addEventListener('click', async () => { const d = await api('/api/import/scan', {method: 'POST', json: {directory: $('imp-scan-dir').value}}); if (d._ok) watchJob(d.job.id); });
     $('imp-reindex').addEventListener('click', async () => { const d = await api('/api/import/reindex', {method: 'POST', json: {force: true}}); if (d._ok) watchJob(d.job.id); });
     const n = (id) => $(id).value === '' ? null : +$(id).value;
-    $('set-save').addEventListener('click', async () => { const d = await api('/api/settings', {method: 'POST', json: {units: $('set-units').value, week_start: $('set-week').value, default_range_days: n('set-range') || 365, load_model: $('set-load').value,
+    $('set-save').addEventListener('click', async () => { const d = await api('/api/settings', {method: 'POST', json: {units: $('set-units').value, week_start: $('set-week').value, default_range_days: n('set-range') || 365, load_model: $('set-load').value, weight_min_kg: n('set-wmin'),
         zones: {max_hr: n('set-maxhr'), threshold_hr: n('set-lthr'), resting_hr: n('set-rhr'), ftp: n('set-ftp')}}}); if (d._ok) { state.settings = d; toast('Saved. Re-index under Import to apply new zones to past activities.'); } });
     $('set-name-save').addEventListener('click', async () => {
         const d = await api('/api/account/profile', {method: 'POST', json: {display_name: $('set-name').value}});

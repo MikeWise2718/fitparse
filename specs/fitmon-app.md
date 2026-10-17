@@ -492,7 +492,7 @@ gets an account until A.1–A.5 and the Tailscale HTTPS front (5.3) are done.
 
 ---
 
-### 8.2 Build log - 2026-09-22 to 2026-10-16 (v0.4.4 - v0.7.1)
+### 8.2 Build log - 2026-09-22 to 2026-10-16 (v0.4.4 - v0.7.2)
 
 Versions before 0.4.4 are in `git log`. From there, all deployed to munchlax:
 
@@ -516,6 +516,7 @@ Versions before 0.4.4 are in `git log`. From there, all deployed to munchlax:
 | 0.6.5 | Devices used: each row says which physical device it is part of (the watch, or e.g. a chest strap by serial) and what it is for; built-in and ANT+/BLE sensor types named where the bundled FIT profile only has numbers |
 | 0.7.0 | **FIT profile 21.218** (task 4.1): products and built-in sensors named (Epix Pro (Gen 2) 42 mm, HRM-Pro Plus, barometer...); `SCHEMA_VERSION` 2, so the worker needs a restart and a re-index; deprecated `utcfromtimestamp` replaced |
 | 0.7.1 | Activities list says what the date range hides ("25 of 25 · 5 older outside the date range") with a link to show all dates |
+| 0.7.2 | Settings: **ignore body weights below N kg** (`weight_min_kg`), applied to weigh-ins and to the watch profile in every activity on import and re-index. A shared scale had put a daughter's weigh-ins on Mike's account since Dec 2023; Garmin copied them into the watch, so running power and calories were ~20 % low for those months |
 
 Data corrections made on munchlax 2026-10-15: the 70.3 run leg trimmed at the official split
 3:10:01; a 2022 gravel ride saved as a run changed to cycling (it held the 400 m / 1 km / mile

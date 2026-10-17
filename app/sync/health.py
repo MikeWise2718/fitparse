@@ -15,7 +15,7 @@ from pathlib import Path
 
 from ..events import event_logger
 from ..models import DailyHealth, db
-from ..settings import get_global_settings, user_dir
+from ..settings import get_global_settings, implausible_weight, user_dir
 from . import client as gc
 from .activities import BudgetExhausted, account, spend_request
 
@@ -168,7 +168,8 @@ def sync_user(home: Path, user_id: int, progress, client=None, delay: float | No
             row = db.session.get(DailyHealth, (user_id, day)) or DailyHealth(user_id=user_id, day=day)
             for key, value in extract(raw).items():
                 setattr(row, key, value)
-            row.weight_kg = weights.get(day)
+            weight = weights.get(day)
+            row.weight_kg = None if implausible_weight(home, user_id, weight) else weight
             db.session.add(row)
             db.session.commit()
             result['days'] += 1

@@ -508,3 +508,23 @@ def test_activity_list_says_what_the_date_range_hides(app, alice, import_file):
     mid = alice.get(f'/api/activities?hide_transitions=0&from={oldest[:4]}-12-31&to={newest[:4]}-01-01').get_json()
     assert mid['outside_range']['before'] >= 1 and mid['outside_range']['after'] >= 1
     assert mid['total'] + mid['outside_range']['before'] + mid['outside_range']['after'] == every['total']
+
+
+def test_weights_below_the_limit_are_ignored(app, home, alice, import_file):
+    """A shared scale put a daughter's weigh-ins on this account and Garmin copied them into
+    the watch. With weight_min_kg set, they are left out on import and on every re-index."""
+    from app.models import FitFile, ProfileSnapshot
+    from app.services import importer
+    from app.settings import save_user_settings
+    from .conftest import SAMPLE_SWIM
+    res = import_file(alice.user_id, SAMPLE_SWIM)
+    with app.app_context():
+        weight = ProfileSnapshot.query.filter_by(file_id=res['file_id']).one().weight_kg
+        assert weight
+        save_user_settings(home, alice.user_id, {'weight_min_kg': weight + 1})
+        importer.reindex_file(home, FitFile.query.get(res['file_id']))
+        snap = ProfileSnapshot.query.filter_by(file_id=res['file_id']).first()
+        assert snap is None or snap.weight_kg is None          # a profile of only a weight leaves no row
+        save_user_settings(home, alice.user_id, {'weight_min_kg': None})
+        importer.reindex_file(home, FitFile.query.get(res['file_id']))
+        assert ProfileSnapshot.query.filter_by(file_id=res['file_id']).one().weight_kg == weight

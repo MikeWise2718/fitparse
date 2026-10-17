@@ -19,6 +19,10 @@ USER_DEFAULTS = {
     # place) and which are collapsed. Per user, so the layout follows them between devices.
     'detail_layout': {'order': [], 'collapsed': []},
     'playback_speed': 60,         # activity playback: activity seconds per real second
+    # Body weights below this are someone else's: a scale shared in the family can put another
+    # person's weigh-ins on this account, and Garmin then copies them into the watch and every
+    # activity file. Ignored in weigh-ins and in activities (on import and re-index). None = off.
+    'weight_min_kg': None,
     'route_prefer': 'known',      # planner suggestions: 'known' ground first, or 'new'
     'route_tolerance_pct': 2,     # planner: how close to the target length counts as there
     'zones': {                    # overrides; null = take from the FIT zones_target snapshots
@@ -84,6 +88,12 @@ def get_user_settings(home: Path, user_id: int) -> dict:
 
 def save_user_settings(home: Path, user_id: int, updates: dict) -> dict:
     return _save(user_dir(home, user_id) / 'settings.json', USER_DEFAULTS, updates)
+
+
+def implausible_weight(home: Path, user_id: int, kg) -> bool:
+    """Is this weight below the person's 'not me' limit (weight_min_kg)?"""
+    limit = get_user_settings(home, user_id).get('weight_min_kg')
+    return bool(limit and kg is not None and kg < float(limit))
 
 
 def get_global_settings(home: Path) -> dict:

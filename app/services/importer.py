@@ -14,7 +14,7 @@ from ..events import event_logger
 from ..models import (BestEffort, Device, FitFile, GarminActivity, Lap, Length, ProfileSnapshot,
                       Record, SCHEMA_VERSION, Session, SessionExclusion, SessionSport, SessionTrim, StrengthSet,
                       ZoneTime, db)
-from ..settings import get_global_settings, get_user_settings, user_dir
+from ..settings import get_global_settings, get_user_settings, implausible_weight, user_dir
 from . import metrics
 from .fit_parser import ParsedFile, parse_fit_file
 
@@ -84,9 +84,12 @@ def index_parsed(home: Path, file_row: FitFile, parsed: ParsedFile) -> None:
         return
 
     start = parsed.meta.get('start_time')
-    if any(parsed.profile.get(k) for k in ('weight_kg', 'resting_hr', 'max_hr', 'threshold_hr', 'ftp')):
+    profile = dict(parsed.profile)
+    if implausible_weight(home, user_id, profile.get('weight_kg')):
+        profile['weight_kg'] = None          # another person's weigh-in reached the watch
+    if any(profile.get(k) for k in ('weight_kg', 'resting_hr', 'max_hr', 'threshold_hr', 'ftp')):
         db.session.add(ProfileSnapshot(file_id=file_row.id, user_id=user_id, at=start,
-                                       **_clean(parsed.profile, ProfileSnapshot)))
+                                       **_clean(profile, ProfileSnapshot)))
     for dev in parsed.devices:
         db.session.add(Device(file_id=file_row.id, user_id=user_id, **_clean(dev, Device)))
 
