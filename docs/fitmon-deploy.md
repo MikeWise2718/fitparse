@@ -200,6 +200,7 @@ ssh munchlax    'cd ~/projects/fitparse && /opt/homebrew/bin/uv run fitmon-sync 
 |---|---|
 | Deploy | `git push`, then `deploy/deploy.sh` |
 | Restart worker | `ssh -t munchlax 'sudo launchctl kickstart -k system/com.fitmon.worker'` |
+| Re-index a user now, with the code on disk (no worker restart, no sudo) | `ssh munchlax "cd ~/projects/fitparse; /opt/homebrew/bin/uv run fitmon-admin reindex -u NAME"` (`-s`: only files below the current `SCHEMA_VERSION`). Needed after a parser or FIT-profile change; ~10 min for ~1,300 files |
 | Restart the route engine | `ssh munchlax "pkill -f btools.server.RouteServer"` (launchd starts it again) |
 | Forgotten password | `ssh -t munchlax 'cd ~/projects/fitparse && /opt/homebrew/bin/uv run fitmon-admin reset-password -u NAME'` |
 | Who is connected to Garmin | `uv run fitmon-sync status` |
