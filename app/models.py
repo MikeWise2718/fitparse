@@ -453,6 +453,27 @@ class DailyHealth(db.Model):
     load_anaerobic = db.Column(db.Float)
 
 
+class SessionWeightFix(db.Model):
+    """Power and calories rescaled because the watch held someone else's body weight.
+
+    Garmin's running power and its calories scale with the weight in the watch. When that was
+    below the person's weight_min_kg (a shared scale), the importer rescales them to the nearest
+    plausible weight and records what it did here, with the watch's own figures. Derived: a
+    re-index recomputes it, so it is keyed by session like the other derived tables.
+    """
+    __tablename__ = 'session_weight_fixes'
+    session_id = db.Column(db.Integer, db.ForeignKey('sessions.id', ondelete='CASCADE'), primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    watch_kg = db.Column(db.Float, nullable=False)       # what the watch had
+    used_kg = db.Column(db.Float, nullable=False)        # what fitmon scaled to
+    weight_from = db.Column(db.String(64))               # where used_kg came from, and its date
+    factor = db.Column(db.Float, nullable=False)
+    power_scaled = db.Column(db.Boolean, nullable=False, default=False)
+    calories_scaled = db.Column(db.Boolean, nullable=False, default=False)
+    watch_avg_power = db.Column(db.Float)
+    watch_calories = db.Column(db.Integer)
+
+
 # --------------------------------------------------------------------------- route library
 
 class Route(db.Model):

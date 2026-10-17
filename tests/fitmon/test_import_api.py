@@ -528,3 +528,42 @@ def test_weights_below_the_limit_are_ignored(app, home, alice, import_file):
         save_user_settings(home, alice.user_id, {'weight_min_kg': None})
         importer.reindex_file(home, FitFile.query.get(res['file_id']))
         assert ProfileSnapshot.query.filter_by(file_id=res['file_id']).one().weight_kg == weight
+
+
+def test_running_power_and_calories_are_rescaled_to_the_real_weight():
+    from app.services.importer import apply_weight_fix
+    run = {'sport': 'running', 'avg_power': 250.0, 'max_power': 400.0, 'norm_power': 260.0, 'calories': 600,
+           'records': [{'power': 250}, {'power': None}, {'power': 300}], 'laps': [{'avg_power': 240.0, 'calories': 300}]}
+    fix = apply_weight_fix(run, 60.0, 72.0, 'weigh-in, 2026-01-01')
+    assert fix['power_scaled'] and fix['calories_scaled'] and fix['watch_avg_power'] == 250.0
+    assert run['avg_power'] == 300.0 and run['records'][2]['power'] == 360 and run['records'][1]['power'] is None
+    assert run['laps'][0]['avg_power'] == 288.0 and run['calories'] == 720
+    # A power meter measures: a ride's power and its work-based calories stay as recorded.
+    ride = {'sport': 'cycling', 'avg_power': 200.0, 'calories': 800, 'records': [{'power': 200}], 'laps': []}
+    fix = apply_weight_fix(ride, 60.0, 72.0, 'x')
+    assert not fix['power_scaled'] and not fix['calories_scaled'] and ride['avg_power'] == 200.0
+
+
+def test_reindex_rescales_to_the_nearest_own_weight(app, home, alice, import_file):
+    from datetime import timedelta
+    from app.models import DailyHealth, FitFile, ProfileSnapshot, Session, SessionWeightFix, db
+    from app.services import importer
+    from app.settings import save_user_settings
+    from .conftest import SAMPLE_SWIM
+    res = import_file(alice.user_id, SAMPLE_SWIM)
+    with app.app_context():
+        f = db.session.get(FitFile, res['file_id'])
+        watch = ProfileSnapshot.query.filter_by(file_id=f.id).one().weight_kg
+        before = Session.query.filter_by(file_id=f.id).one().calories
+        day = f.start_time.date()
+        db.session.add(DailyHealth(user_id=alice.user_id, day=day - timedelta(days=200), weight_kg=watch + 30))
+        db.session.add(DailyHealth(user_id=alice.user_id, day=day + timedelta(days=3), weight_kg=watch + 20))
+        db.session.commit()
+        save_user_settings(home, alice.user_id, {'weight_min_kg': watch + 1})
+        importer.reindex_file(home, f)
+        sess = Session.query.filter_by(file_id=f.id).one()
+        fix = db.session.get(SessionWeightFix, sess.id)
+        assert fix.used_kg == round(watch + 20, 1)                  # the nearer weigh-in wins
+        assert fix.calories_scaled and sess.calories == round(before * (watch + 20) / watch)
+    detail = alice.get(f'/api/sessions/{sess.id}').get_json()
+    assert detail['weight_fix']['watch_calories'] == before

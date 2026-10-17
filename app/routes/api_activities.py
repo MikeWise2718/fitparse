@@ -8,7 +8,7 @@ from sqlalchemy import func
 from .. import auth
 from ..events import event_logger
 from ..models import (BestEffort, Device, FitFile, Lap, Length, ProfileSnapshot, RECORD_COLUMNS, Record, Session,
-                      SessionExclusion, SessionSport, SessionTrim, StrengthSet, ZoneTime, db)
+                      SessionExclusion, SessionSport, SessionTrim, SessionWeightFix, StrengthSet, ZoneTime, db)
 from ..services import importer, metrics
 
 activities_bp = Blueprint('activities', __name__)
@@ -174,6 +174,9 @@ def session_detail(session_id):
         'zones': [row_dict(x) for x in sorted(sess.zone_times, key=lambda z: (z.kind, z.zone))],
         'hr_zones': _hr_zone_bounds(sess),
         'sport_override': _sport_override(sess),
+        'weight_fix': (lambda f: row_dict(f, ['watch_kg', 'used_kg', 'weight_from', 'factor', 'power_scaled', 'calories_scaled',
+                                              'watch_avg_power', 'watch_calories']) if f else None)(
+            db.session.get(SessionWeightFix, sess.id)),
         'best_efforts': [row_dict(x, ['kind', 'window', 'value', 'offset_s'])
                          for x in sorted(sess.best_efforts, key=lambda b: (b.kind, b.window))],
         'devices': [row_dict(d) for d in devices],

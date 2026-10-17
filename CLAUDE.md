@@ -173,6 +173,10 @@ need it: they set `app.config['FITMON_ROUTER']` to `routing.brouter.StraightRout
   `SessionShape` (each GPS activity resampled every 25 m) is filled **lazily** by
   `routelib.refresh()` when the Routes tab asks, not by the importer - so matching works whatever
   code the (non-reloading) worker is running.
+- **Body weight in activity files can be someone else's** (a family scale). `weight_min_kg` (user
+  setting) drops such weights, and `importer.apply_weight_fix` rescales running power and calories
+  to the nearest own weight before metrics run; the watch's figures go to `session_weight_fixes`.
+  Never rescale bike power: a power meter measures it.
 - Never turn on the Werkzeug debugger (`debug=True`): other people can reach this app.
 - Bump `app/__init__.py: __version__` in every commit that changes code.
 - The top-level `fitparse.py` script is a legacy CLI that shares its name with the `fitparse/`

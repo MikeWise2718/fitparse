@@ -419,6 +419,10 @@ async function loadDetail(id) {
     $('det-legs').querySelectorAll('a').forEach((a) => a.addEventListener('click', () => go('detail', a.dataset.leg)));
     $('det-banner').innerHTML = (d.file.parse_status !== 'ok' ? `<div class="banner">This file could only be read partly: <code>${esc(d.file.parse_error)}</code>. Totals and samples up to that point are shown.</div>` : '')
         + (s.excluded ? '<div class="banner">Marked <b>not training</b>: kept here in full, but left out of load, volume, trends and records.</div>' : '')
+        + (d.weight_fix ? `<div class="banner">The watch had a body weight of <b>${fmt.weight(d.weight_fix.watch_kg)}</b>, not yours
+            (it came from a shared scale), so ${[d.weight_fix.power_scaled ? 'power' : '', d.weight_fix.calories_scaled ? 'calories' : ''].filter(Boolean).join(' and ')}
+            ${d.weight_fix.power_scaled && d.weight_fix.calories_scaled ? 'are' : 'is'} rescaled to <b>${fmt.weight(d.weight_fix.used_kg)}</b> (${esc(d.weight_fix.weight_from || '')}), ×${fmt.num(d.weight_fix.factor, 2)}.
+            The watch's own figures: ${[d.weight_fix.power_scaled && d.weight_fix.watch_avg_power != null ? `${fmt.num(d.weight_fix.watch_avg_power)} W` : '', d.weight_fix.calories_scaled && d.weight_fix.watch_calories != null ? `${d.weight_fix.watch_calories} kcal` : ''].filter(Boolean).join(', ')}.</div>` : '')
         + (d.sport_override ? `<div class="banner">Recorded as <b>${esc(fmt.sport(d.sport_override.recorded_sport, d.sport_override.recorded_sub_sport))}</b>, changed to <b>${esc(fmt.sport(s.sport, s.sub_sport))}</b>. <button id="det-sport-undo">Restore</button></div>` : '');
     if ($('det-sport-undo')) $('det-sport-undo').addEventListener('click', () => changeSport(null));
     routesUI.activityRoutes(s.id);

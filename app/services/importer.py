@@ -11,9 +11,9 @@ from pathlib import Path
 from sqlalchemy import func
 
 from ..events import event_logger
-from ..models import (BestEffort, Device, FitFile, GarminActivity, Lap, Length, ProfileSnapshot,
-                      Record, SCHEMA_VERSION, Session, SessionExclusion, SessionSport, SessionTrim, StrengthSet,
-                      ZoneTime, db)
+from ..models import (BestEffort, DailyHealth, Device, FitFile, GarminActivity, Lap, Length, ProfileSnapshot,
+                      Record, SCHEMA_VERSION, Session, SessionExclusion, SessionSport, SessionTrim, SessionWeightFix,
+                      StrengthSet, ZoneTime, db)
 from ..settings import get_global_settings, get_user_settings, implausible_weight, user_dir
 from . import metrics
 from .fit_parser import ParsedFile, parse_fit_file
@@ -62,6 +62,67 @@ def resolve_zones(home: Path, user_id: int, profile: dict, at=None) -> dict:
     return out
 
 
+def nearest_plausible_weight(home: Path, user_id: int, at):
+    """(kg, where from) nearest in time to `at` among this person's own weights: the watch profile
+    of other activities and the daily weigh-ins, both at or above weight_min_kg. None if none."""
+    limit = float(get_user_settings(home, user_id).get('weight_min_kg') or 0)
+    if at is None:
+        return None
+    found = []
+    snap = ProfileSnapshot
+    for order, cmp in ((snap.at.desc(), snap.at <= at), (snap.at.asc(), snap.at > at)):
+        row = (snap.query.filter(snap.user_id == user_id, snap.weight_kg.isnot(None), snap.weight_kg >= limit, cmp)
+               .order_by(order).first())
+        if row:
+            found.append((abs((row.at - at).total_seconds()), row.weight_kg, f'watch, {row.at:%Y-%m-%d}'))
+    day = at.date()
+    for order, cmp in ((DailyHealth.day.desc(), DailyHealth.day <= day), (DailyHealth.day.asc(), DailyHealth.day > day)):
+        row = (DailyHealth.query.filter(DailyHealth.user_id == user_id, DailyHealth.weight_kg.isnot(None),
+                                        DailyHealth.weight_kg >= limit, cmp).order_by(order).first())
+        if row:
+            found.append((abs((row.day - day).days) * 86400, row.weight_kg, f'weigh-in, {row.day:%Y-%m-%d}'))
+    if not found:
+        return None
+    _, kg, source = min(found)
+    return round(kg, 1), source
+
+
+# Garmin's running power is estimated from body weight, so it scales with the weight the watch had.
+# Power on a bike comes from a power meter: measured, never rescaled.
+WEIGHT_SCALED_POWER_SPORTS = ('running',)
+POWER_FIELDS = ('avg_power', 'max_power', 'norm_power')
+
+
+def apply_weight_fix(sess: dict, watch_kg: float, used_kg: float, source: str) -> dict:
+    """Rescale a parsed session's weight-dependent figures from watch_kg to used_kg, in place.
+    Returns the fix row's values (watch figures kept). Runs before metrics, so best efforts,
+    efficiency and the graphs all follow."""
+    factor = used_kg / watch_kg
+    fix = {'watch_kg': watch_kg, 'used_kg': used_kg, 'weight_from': source, 'factor': round(factor, 4),
+           'watch_avg_power': sess.get('avg_power'), 'watch_calories': sess.get('calories'),
+           'power_scaled': False, 'calories_scaled': False}
+    has_power = any(r.get('power') for r in sess['records'])
+    if sess.get('sport') in WEIGHT_SCALED_POWER_SPORTS and (has_power or sess.get('avg_power')):
+        for rec in sess['records']:
+            if rec.get('power') is not None:
+                rec['power'] = int(round(rec['power'] * factor))
+        for item in [sess] + list(sess.get('laps') or []):
+            for key in POWER_FIELDS:
+                if item.get(key) is not None:
+                    item[key] = round(item[key] * factor, 1)
+        if sess.get('work_j') is not None:
+            sess['work_j'] = round(sess['work_j'] * factor)
+        fix['power_scaled'] = True
+    # Calories from heart rate scale with weight; a ride's from a power meter come from the work.
+    if sess.get('calories') and not (sess.get('sport') == 'cycling' and has_power):
+        sess['calories'] = int(round(sess['calories'] * factor))
+        for lap in sess.get('laps') or []:
+            if lap.get('calories'):
+                lap['calories'] = int(round(lap['calories'] * factor))
+        fix['calories_scaled'] = True
+    return fix
+
+
 def _clean(row: dict, model) -> dict:
     cols = model.__table__.columns.keys()
     return {k: v for k, v in row.items() if k in cols}
@@ -104,12 +165,19 @@ def index_parsed(home: Path, file_row: FitFile, parsed: ParsedFile) -> None:
     excluded = {e.idx for e in SessionExclusion.query.filter_by(file_id=file_row.id).all()}
     sports = {o.idx: o for o in SessionSport.query.filter_by(file_id=file_row.id).all()}
 
+    # Someone else's weight in the watch (see weight_min_kg): rescale to this person's own.
+    weight_fix_to = None
+    if implausible_weight(home, user_id, parsed.profile.get('weight_kg')):
+        weight_fix_to = nearest_plausible_weight(home, user_id, start)
+
     for sess in parsed.sessions:
         # Before anything is computed: best efforts, TSS and plausibility all follow the sport.
         if sess['idx'] in sports:
             sess['sport'], sess['sub_sport'] = sports[sess['idx']].sport, sports[sess['idx']].sub_sport
         if sess['idx'] in trims:
             metrics.apply_trim(sess, trims[sess['idx']])
+        fix = (apply_weight_fix(sess, parsed.profile['weight_kg'], *weight_fix_to)
+               if weight_fix_to else None)
         metrics.compute_session(sess, zones, load_model)
         sess['excluded'] = sess['idx'] in excluded
         sess['vo2max_carried'] = _vo2_is_carried(user_id, sess, start)
@@ -133,6 +201,8 @@ def index_parsed(home: Path, file_row: FitFile, parsed: ParsedFile) -> None:
         if sess['_zones']:
             db.session.execute(ZoneTime.__table__.insert(),
                                [{**z, 'session_id': sid} for z in sess['_zones']])
+        if fix and (fix['power_scaled'] or fix['calories_scaled']):
+            db.session.add(SessionWeightFix(session_id=sid, user_id=user_id, **fix))
 
 
 # Garmin only estimates VO2 max for running, and for cycling when power is recorded. It writes
