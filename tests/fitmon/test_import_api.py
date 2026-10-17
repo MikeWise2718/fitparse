@@ -492,3 +492,19 @@ def test_changing_the_sport_moves_its_records_and_survives_a_reindex(app, home, 
     assert back['sport'] == 'running'
     assert alice.get(f"/api/sessions/{back['session_id']}").get_json()['sport_override'] is None
     assert alice.get('/api/trends/best-efforts').get_json()['all_time']
+
+
+def test_activity_list_says_what_the_date_range_hides(app, alice, import_file):
+    """The list shows only the date range; it also counts what matches outside it, so a
+    one-year default does not read as if older activities were missing."""
+    from .conftest import SAMPLE_OLD, SAMPLE_RUN
+    import_file(alice.user_id, SAMPLE_OLD)
+    import_file(alice.user_id, SAMPLE_RUN)
+    every = alice.get('/api/activities?hide_transitions=0').get_json()
+    days = sorted(a['start_time'][:10] for a in every['activities'])
+    assert every['outside_range'] == {'before': 0, 'after': 0} and len(days) >= 2
+    # A range that starts after the oldest activity and ends before the newest.
+    newest, oldest = days[-1], days[0]
+    mid = alice.get(f'/api/activities?hide_transitions=0&from={oldest[:4]}-12-31&to={newest[:4]}-01-01').get_json()
+    assert mid['outside_range']['before'] >= 1 and mid['outside_range']['after'] >= 1
+    assert mid['total'] + mid['outside_range']['before'] + mid['outside_range']['after'] == every['total']

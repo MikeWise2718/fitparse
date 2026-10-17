@@ -492,7 +492,7 @@ gets an account until A.1–A.5 and the Tailscale HTTPS front (5.3) are done.
 
 ---
 
-### 8.2 Build log - 2026-09-22 to 2026-10-16 (v0.4.4 - v0.7.0)
+### 8.2 Build log - 2026-09-22 to 2026-10-16 (v0.4.4 - v0.7.1)
 
 Versions before 0.4.4 are in `git log`. From there, all deployed to munchlax:
 
@@ -515,6 +515,7 @@ Versions before 0.4.4 are in `git log`. From there, all deployed to munchlax:
 | 0.6.4 | Every chart whose dots are activities opens the activity on click; Ctrl/Cmd/Shift-click or middle-click opens it in a new tab (Trends: VO2 max, economy, efficiency, training effect, swim, records, power curve; a route's times) |
 | 0.6.5 | Devices used: each row says which physical device it is part of (the watch, or e.g. a chest strap by serial) and what it is for; built-in and ANT+/BLE sensor types named where the bundled FIT profile only has numbers |
 | 0.7.0 | **FIT profile 21.218** (task 4.1): products and built-in sensors named (Epix Pro (Gen 2) 42 mm, HRM-Pro Plus, barometer...); `SCHEMA_VERSION` 2, so the worker needs a restart and a re-index; deprecated `utcfromtimestamp` replaced |
+| 0.7.1 | Activities list says what the date range hides ("25 of 25 · 5 older outside the date range") with a link to show all dates |
 
 Data corrections made on munchlax 2026-10-15: the 70.3 run leg trimmed at the official split
 3:10:01; a 2022 gravel ride saved as a run changed to cycling (it held the 400 m / 1 km / mile

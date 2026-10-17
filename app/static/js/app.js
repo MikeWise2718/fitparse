@@ -379,7 +379,11 @@ async function loadActivities(reset) {
     const data = await api('/api/activities?' + q);
     state.act.rows = state.act.rows.concat(data.activities);
     const nf = activeFilterCount();
-    $('act-count').textContent = `${state.act.rows.length} of ${data.total}` + (nf ? ` · ${nf} filter${nf > 1 ? 's' : ''} active` : '');
+    // Say what the date range hides: "66 of 66" alone reads as if it were everything.
+    const out = data.outside_range || {}, hidden = [out.before ? `${out.before} older` : '', out.after ? `${out.after} newer` : ''].filter(Boolean);
+    $('act-count').innerHTML = esc(`${state.act.rows.length} of ${data.total}` + (nf ? ` · ${nf} filter${nf > 1 ? 's' : ''} active` : ''))
+        + (hidden.length ? ` · ${hidden.join(' and ')} outside the date range <a id="act-widen">show all dates</a>` : '');
+    if ($('act-widen')) $('act-widen').addEventListener('click', () => { setPreset('all'); state.rangeNote = ''; showNote(); loadActivities(true); });
     state.act.filtered = !data.total && (nf || $('flt-from').value || $('flt-to').value || $('flt-sport').value || $('act-search').value);
     $('act-more').style.display = state.act.rows.length < data.total ? '' : 'none';
     $('act-export').href = '/api/export/activities.csv?' + query(actFilterParams());

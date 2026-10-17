@@ -42,8 +42,9 @@ def parse_day(value: str | None):
         return None
 
 
-def filtered_sessions():
-    """Session query for the current user with the shared ?sport=&sub_sport=&from=&to= filters."""
+def filtered_sessions(dates: bool = True):
+    """Session query for the current user with the shared ?sport=&sub_sport=&from=&to= filters.
+    dates=False leaves out from/to, to count what the date range hides."""
     q = auth.scoped(Session)
     sport = request.args.get('sport')
     if sport:
@@ -51,9 +52,9 @@ def filtered_sessions():
     if request.args.get('sub_sport'):
         q = q.filter(Session.sub_sport == request.args['sub_sport'])
     start, end = parse_day(request.args.get('from')), parse_day(request.args.get('to'))
-    if start:
+    if dates and start:
         q = q.filter(Session.start_time >= start)
-    if end:
+    if dates and end:
         q = q.filter(Session.start_time < end + timedelta(days=1))
     for name in FILTERABLE:
         column = getattr(Session, name)
@@ -69,9 +70,8 @@ def filtered_sessions():
     return q
 
 
-@activities_bp.route('/api/activities')
-def list_activities():
-    q = filtered_sessions()
+def _list_query(dates: bool = True):
+    q = filtered_sessions(dates)
     text = (request.args.get('q') or '').strip()
     if text:
         like = f'%{text}%'
@@ -81,6 +81,21 @@ def list_activities():
         q = q.filter(Session.sport != 'transition')
     if request.args.get('show_excluded', '0') != '1':
         q = q.filter(Session.excluded.is_(False))
+    return q
+
+
+def _outside_range() -> dict:
+    """What the date range hides: activities matching every other filter, before or after it.
+    The list shows only the range, and "66 of 66" alone reads as if that were everything."""
+    start, end = parse_day(request.args.get('from')), parse_day(request.args.get('to'))
+    q = _list_query(dates=False)
+    return {'before': q.filter(Session.start_time < start).count() if start else 0,
+            'after': q.filter(Session.start_time >= end + timedelta(days=1)).count() if end else 0}
+
+
+@activities_bp.route('/api/activities')
+def list_activities():
+    q = _list_query()
     sort = request.args.get('sort', 'start_time')
     column = getattr(Session, sort if sort in SORTABLE else 'start_time')
     q = q.order_by(column.asc() if request.args.get('dir') == 'asc' else column.desc())
@@ -100,7 +115,7 @@ def list_activities():
                      'utc_offset_s': f.utc_offset_s if f else None,
                      'legs': legs.get(r.file_id, 1)})
         out.append(item)
-    return jsonify({'total': total, 'activities': out})
+    return jsonify({'total': total, 'outside_range': _outside_range(), 'activities': out})
 
 
 @activities_bp.route('/api/sports')
