@@ -87,3 +87,20 @@ def test_login_uses_the_credentials_file_and_says_to_delete_it(app, make_user, m
     out = capsys.readouterr().out
     assert seen == {'email': 'me@example.com', 'password': 's3cret-value'}
     assert 's3cret-value' not in out and 'Delete' in out and 'GARMIN_PASSWORD' in out   # names the key, never the value
+
+
+def test_admin_reindex_runs_the_reindex_in_process(app, make_user, import_file, monkeypatch, capsys):
+    from app.cli import admin
+    from app.models import FitFile, Session, db
+    uid = make_user('carol')
+    res = import_file(uid)
+    with app.app_context():
+        db.session.get(FitFile, res['file_id']).schema_version = 0      # as if indexed by older code
+        db.session.commit()
+    monkeypatch.setattr('sys.argv', ['fitmon-admin', 'reindex', '-u', 'carol', '-s'])
+    assert admin.main() == 0
+    assert 'Re-indexed 1 file(s)' in capsys.readouterr().out
+    with app.app_context():
+        from app.models import SCHEMA_VERSION
+        assert db.session.get(FitFile, res['file_id']).schema_version == SCHEMA_VERSION
+        assert Session.query.filter_by(file_id=res['file_id']).count() == 1

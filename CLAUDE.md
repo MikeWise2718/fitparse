@@ -133,6 +133,7 @@ uv run pytest                             # tests/fitmon (the library's own test
 uv run fitmon-web -w                      # web + inline job worker on :8640 (dev)
 uv run fitmon-web  /  uv run fitmon-worker    # as deployed: two processes, exactly one worker
 uv run fitmon-admin create-user -u NAME -a
+uv run fitmon-admin reindex -u NAME [-s]   # re-index in this process, with this code (-s: only stale files)
 uv run fitmon-import -u NAME -d D:/fit
 uv run fitmon-sync login|run|status|disconnect
 uv run --with playwright --with pillow python tools/screenshot.py -af <run.fit> -mh 170   # landing pictures

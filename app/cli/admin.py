@@ -1,4 +1,4 @@
-"""fitmon-admin: bootstrap the first account and recover when a password is lost."""
+"""fitmon-admin: bootstrap the first account, recover when a password is lost, re-index a user."""
 import argparse
 import getpass
 import sys
@@ -52,6 +52,11 @@ def main() -> int:
         p = sub.add_parser(name, help=text, formatter_class=RichHelpFormatter)
         p.add_argument('-u', '--username', required=True)
 
+    reindex = sub.add_parser('reindex', formatter_class=RichHelpFormatter,
+                             help="re-index one user's files in this process (the worker's job, without waiting for it)")
+    reindex.add_argument('-u', '--username', required=True)
+    reindex.add_argument('-s', '--stale', action='store_true', help='only files not yet at the current schema version')
+
     invite = sub.add_parser('invite', help='create a one-time invite link', formatter_class=RichHelpFormatter)
     invite.add_argument('-a', '--admin', action='store_true')
     invite.add_argument('-n', '--note')
@@ -102,6 +107,27 @@ def main() -> int:
             if not user.is_active:
                 auth.revoke_all_tokens(user.id)
             console.print(f'{user.username}: active={user.is_active}')
+        elif args.command == 'reindex':
+            # The same as a 'reindex' job, run here: the worker does not reload code on munchlax,
+            # so after a parser change this runs the new code without restarting it.
+            from rich.progress import Progress
+            from ..models import SCHEMA_VERSION, FitFile
+            from ..services import importer
+            user = _find(args.username)
+            q = FitFile.query.filter_by(user_id=user.id)
+            if args.stale:
+                q = q.filter(FitFile.schema_version != SCHEMA_VERSION)
+            ids = [f.id for f in q.order_by(FitFile.start_time).all()]
+            counts: dict = {}
+            with Progress(console=console) as bar:
+                task = bar.add_task(f're-indexing {user.username}', total=len(ids))
+                for file_id in ids:
+                    row = db.session.get(FitFile, file_id)
+                    if row:
+                        status = importer.reindex_file(app.config['FITMON_HOME'], row)
+                        counts[status] = counts.get(status, 0) + 1
+                    bar.advance(task)
+            console.print(f'[green]Re-indexed[/green] {len(ids)} file(s): ' + ', '.join(f'{k} {v}' for k, v in counts.items()))
         elif args.command == 'invite':
             admin = User.query.filter_by(role='admin').order_by(User.id).first()
             _, raw = auth.create_invite(admin.id if admin else None,
