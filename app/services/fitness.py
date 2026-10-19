@@ -62,8 +62,10 @@ def _bucket_key(when: datetime, bucket: str, week_start: str) -> str:
     return (d - timedelta(days=offset)).isoformat()
 
 
-def volume(user_id: int, bucket: str, start, end, week_start: str = 'monday') -> dict:
+def volume(user_id: int, bucket: str, start, end, week_start: str = 'monday', sports=None) -> dict:
     q = _sessions(user_id).filter(Session.sport != 'transition')
+    if sports:
+        q = q.filter(Session.sport.in_(sports))
     if start:
         q = q.filter(Session.start_time >= start)
     if end:

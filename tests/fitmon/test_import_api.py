@@ -567,3 +567,13 @@ def test_reindex_rescales_to_the_nearest_own_weight(app, home, alice, import_fil
         assert fix.calories_scaled and sess.calories == round(before * (watch + 20) / watch)
     detail = alice.get(f'/api/sessions/{sess.id}').get_json()
     assert detail['weight_fix']['watch_calories'] == before
+
+
+def test_volume_respects_the_sport_filter(app, alice, import_file):
+    from .conftest import SAMPLE_POWER, SAMPLE_RUN
+    import_file(alice.user_id, SAMPLE_RUN)
+    import_file(alice.user_id, SAMPLE_POWER)
+    every = alice.get('/api/trends/volume?bucket=year').get_json()
+    assert 'running' in every['sports'] and len(every['sports']) >= 2
+    runs = alice.get('/api/trends/volume?bucket=year&sport=running').get_json()
+    assert runs['sports'] == ['running']

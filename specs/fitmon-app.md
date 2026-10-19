@@ -492,7 +492,7 @@ gets an account until A.1–A.5 and the Tailscale HTTPS front (5.3) are done.
 
 ---
 
-### 8.2 Build log - 2026-09-22 to 2026-10-16 (v0.4.4 - v0.7.4)
+### 8.2 Build log - 2026-09-22 to 2026-10-19 (v0.4.4 - v0.7.5)
 
 Versions before 0.4.4 are in `git log`. From there, all deployed to munchlax:
 
@@ -519,6 +519,7 @@ Versions before 0.4.4 are in `git log`. From there, all deployed to munchlax:
 | 0.7.2 | Settings: **ignore body weights below N kg** (`weight_min_kg`), applied to weigh-ins and to the watch profile in every activity on import and re-index. A shared scale had put a daughter's weigh-ins on Mike's account since Dec 2023; Garmin copied them into the watch, so running power and calories were ~20 % low for those months |
 | 0.7.3 | Activities recorded with a body weight below that limit get **running power and calories rescaled** to the nearest own weight (watch profile or weigh-in), at import and re-index; the watch's figures kept (`session_weight_fixes`) and shown in a banner. Bike power (a meter) and work-based ride calories are left alone |
 | 0.7.4 | `fitmon-admin reindex -u NAME [-s]`: a user's re-index in its own process, with the current code, without waiting for the (non-reloading) worker |
+| 0.7.5 | Weekly volume: a gridline every hour; the tooltip lists only sports with time that week, plus a total, both leaving out sports hidden in the legend; the sport filter now applies to the volume charts (Dashboard and Trends) |
 
 Data corrections made on munchlax 2026-10-15: the 70.3 run leg trimmed at the official split
 3:10:01; a 2022 gravel ride saved as a run changed to cycling (it held the 400 m / 1 km / mile

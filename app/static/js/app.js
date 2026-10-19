@@ -241,16 +241,30 @@ async function initHeaderSync() {
 }
 
 // ---------------------------------------------------------------- dashboard
+const VOLUME_UNITS = {hours: '', km: 'km', load: '', calories: 'kcal'};
+function volumeValue(v, metric) {
+    if (metric === 'hours') { const m = Math.round(v * 60); return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} h`; }
+    if (metric === 'km') return statute() ? `${(v / 1.609344).toFixed(1)} mi` : `${v.toFixed(1)} km`;
+    return `${Math.round(v)}${VOLUME_UNITS[metric] ? ' ' + VOLUME_UNITS[metric] : ''}`;
+}
 function volumeChart(id, data, metric) {
+    // A gridline every hour, while that stays readable: the tallest stack is at most about a day.
+    const tallest = Math.max(0, ...data.buckets.map((_, i) => data.sports.reduce((a, sp) => a + ((data.data[sp][i] || {})[metric] || 0), 0)));
+    const hourly = metric === 'hours' && tallest <= 24;
     chart(id, {type: 'bar', data: {labels: data.buckets, datasets: data.sports.map((sp, i) => ({label: fmt.sport(sp), backgroundColor: color(sp, i),
         data: data.data[sp].map((c) => (c ? c[metric] : 0))}))},
         // Weekly buckets are dates and monthly ones yyyy-mm, so both get month marks; yearly ones are plain years.
         options: {scales: {x: String(data.buckets[0] || '').length > 4 ? timeAxis({stacked: true}, {bars: true}) : {stacked: true},
-                           y: {stacked: true, title: {display: true, text: metric}}}}});
+                           y: {stacked: true, title: {display: true, text: metric}, ticks: hourly ? {stepSize: 1} : {}}},
+            // The tooltip lists only sports with something that week, and a total. A sport hidden by
+            // clicking its legend entry is left out of both (Chart.js skips hidden datasets).
+            plugins: {tooltip: {filter: (item) => item.parsed.y > 0,
+                callbacks: {label: (item) => `${item.dataset.label}: ${volumeValue(item.parsed.y, metric)}`,
+                    footer: (items) => (items.length > 1 ? `Total: ${volumeValue(items.reduce((a, t) => a + t.parsed.y, 0), metric)}` : '')}}}}});
 }
 async function loadDashboard() {
     const [d, fit, vol, cal] = await Promise.all([api('/api/dashboard'), api('/api/fitness?' + range()),
-        api('/api/trends/volume?bucket=week&' + range()), api('/api/trends/calendar')]);
+        api('/api/trends/volume?bucket=week&' + query()), api('/api/trends/calendar')]);
     $('dash-empty').style.display = d.total_sessions ? 'none' : '';
     const delta = (v) => v == null ? '' : `<span class="${v >= 0 ? 'up' : 'down'}">${v >= 0 ? '+' : ''}${v} in 90 d</span>`;
     const vs = (now, avg, unit) => avg ? `4-wk avg ${avg} ${unit}` : '';
@@ -851,7 +865,7 @@ const timeAxis = (extra = {}, {bars = false} = {}) => Object.assign({type: 'cate
     grid: {color: 'rgba(110,117,133,.55)', lineWidth: 1, tickLength: 8, offset: bars}}, extra);
 async function loadTrends() {
     const q = query(), rq = range().toString(), sportOnly = $('flt-sport').value ? `sport=${$('flt-sport').value}&` : '';
-    const [vo2, vol, pc, best, te, swim, strength, body] = await Promise.all([api('/api/trends/vo2max?' + q), api(`/api/trends/volume?bucket=${$('tr-volume-bucket').value}&` + rq),
+    const [vo2, vol, pc, best, te, swim, strength, body] = await Promise.all([api('/api/trends/vo2max?' + q), api(`/api/trends/volume?bucket=${$('tr-volume-bucket').value}&` + q),
         api('/api/trends/power-curve?' + sportOnly + rq), api('/api/trends/best-efforts?' + rq), api('/api/trends/training-effect?' + q), api('/api/trends/swim?' + rq), api('/api/trends/strength?' + rq), api('/api/body')]);
     const sports = [...new Set(vo2.points.map((p) => p.sport))], days = [...new Set(vo2.points.map((p) => fmt.day(p.at)))].sort();
     const vo2Days = [...new Set(days.concat((vo2.garmin || []).map((g) => g.day)))].sort();

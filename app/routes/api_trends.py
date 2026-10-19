@@ -44,7 +44,9 @@ def volume():
     if bucket not in ('week', 'month', 'year'):
         bucket = 'week'
     start, end = _range()
-    return jsonify(fitness.volume(g.user.id, bucket, start, end, _prefs()['week_start']))
+    # The sport filter at the top of the page applies here too (it used to be ignored).
+    sports = [s for s in (request.args.get('sport') or '').split(',') if s] or None
+    return jsonify(fitness.volume(g.user.id, bucket, start, end, _prefs()['week_start'], sports))
 
 
 @trends_bp.route('/api/trends/vo2max')
