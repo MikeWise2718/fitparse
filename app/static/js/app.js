@@ -332,7 +332,7 @@ const ACT_COLS = [
     {label: 'VO2', sort: 'vo2max', num: 1, html: (r) => r.vo2max == null ? ''
         : r.vo2max_carried ? `<span class="muted" title="Carried over from an earlier activity, not measured here">${fmt.num(r.vo2max, 1)}</span>`
         : fmt.num(r.vo2max, 1)},
-    {label: 'Load', sort: 'load', num: 1, html: (r) => r.load != null ? `${fmt.num(r.load)} <span class="muted">${r.load_model === 'tss' ? 'W' : '♥'}</span>` : ''},
+    {label: 'Load', sort: 'load', num: 1, html: (r) => r.load != null ? `${fmt.num(r.load)} <span class="muted"${r.load_model === 'est' ? ' title="No heart rate recorded: estimated"' : ''}>${r.load_model === 'tss' ? 'W' : r.load_model === 'est' ? '≈' : '♥'}</span>` : ''},
 ];
 // Range filters offered above the activities table. `to`/`from` convert between the unit a
 // person types and the metres/seconds/m-per-s the API stores.
@@ -445,10 +445,15 @@ async function loadDetail(id) {
     $('det-tiles').innerHTML = [
         tile('Distance', fmt.dist(s.distance_m, s.sport)), tile('Time', fmt.dur(s.timer_s), s.elapsed_s ? `elapsed ${fmt.dur(s.elapsed_s)}` : ''),
         tile('Pace / speed', fmt.speed(s.avg_speed, s.sport), s.max_speed ? `max ${fmt.speed(s.max_speed, s.sport)}` : ''),
-        tile('Heart rate', s.avg_hr, s.max_hr ? `max ${s.max_hr}` : ''),
+        s.load_model === 'est' ? tile('Heart rate', '–', 'not recorded', 'muted') : tile('Heart rate', s.avg_hr, s.max_hr ? `max ${s.max_hr}` : ''),
         s.has_power ? tile('Power', `${fmt.num(s.avg_power)} W`, `NP ${fmt.num(s.norm_power)} · max ${fmt.num(s.max_power)}`) : '',
         s.tss != null ? tile('TSS / IF', fmt.num(s.tss), `IF ${fmt.num(s.intensity_factor, 2)}`) : '',
-        tile('Load', fmt.num(s.load), s.load_model === 'tss' ? 'from power' : s.load_model ? 'from heart rate' : ''),
+        s.load_model === 'est'
+            ? tile('Load', '≈ ' + fmt.num(s.load), 'estimated: no heart rate', '',
+                'No heart rate was recorded (a chest strap that did not hand over its data, or a sensor that dropped out). '
+                + 'The load is your usual load per hour in this kind of session, from your nearest sessions with heart rate, '
+                + 'times the duration of this one, adjusted for its pace.')
+            : tile('Load', fmt.num(s.load), s.load_model === 'tss' ? 'from power' : s.load_model ? 'from heart rate' : ''),
         tile('Training effect', s.te_aerobic != null ? fmt.num(s.te_aerobic, 1) : '', s.te_anaerobic != null ? `anaerobic ${fmt.num(s.te_anaerobic, 1)}` : ''),
         s.vo2max ? tile('VO2 max', fmt.num(s.vo2max, 1),
             s.vo2max_carried ? 'carried over, not measured here' : 'recalculated on this activity',

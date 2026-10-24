@@ -577,3 +577,43 @@ def test_volume_respects_the_sport_filter(app, alice, import_file):
     assert 'running' in every['sports'] and len(every['sports']) >= 2
     runs = alice.get('/api/trends/volume?bucket=year&sport=running').get_json()
     assert runs['sports'] == ['running']
+
+
+def test_a_session_without_heart_rate_gets_an_estimated_load(app, home, alice, import_file, monkeypatch):
+    """A chest strap that never handed over its swim data leaves a session with one heart-rate
+    reading. Its load is estimated from the person's own sessions of that kind, not counted as 0."""
+    from datetime import timedelta
+    from app.models import FitFile, Session, db
+    from app.services import importer
+    from .conftest import SAMPLE_VO2
+    res = import_file(alice.user_id)
+    other = import_file(alice.user_id, SAMPLE_VO2)['file_id']      # the reference sessions hang off another file
+    with app.app_context():
+        s = Session.query.filter_by(file_id=res['file_id']).one()
+        assert s.load_model == 'trimp' and s.avg_hr
+        Session.query.filter_by(file_id=other).delete()
+        sport, sub, speed, hours = s.sport, s.sub_sport, s.avg_speed, s.timer_s / 3600
+        for k, per_hour in enumerate((50, 60, 70)):
+            db.session.add(Session(file_id=other, user_id=alice.user_id, idx=10 + k, sport=sport, sub_sport=sub,
+                                   start_time=s.start_time - timedelta(days=7 * (k + 1)), timer_s=3600, avg_speed=speed,
+                                   load=per_hour, load_model='trimp'))
+        db.session.commit()
+        parse = importer.parse_fit_file
+
+        def no_hr(*a, **kw):
+            parsed = parse(*a, **kw)
+            for sess in parsed.sessions:
+                for rec in sess['records'][1:]:
+                    rec['hr'] = None
+            return parsed
+        monkeypatch.setattr(importer, 'parse_fit_file', no_hr)
+        importer.reindex_file(home, db.session.get(FitFile, res['file_id']))
+        s = Session.query.filter_by(file_id=res['file_id'], idx=0).one()
+        assert s.load_model == 'est' and s.avg_hr is None and s.trimp is None
+        assert abs(s.load - 60 * hours) < 0.2                  # the median per hour, same pace
+        # Without enough sessions of the kind to go on, the load stays empty rather than 0.
+        Session.query.filter(Session.idx >= 10).delete()
+        db.session.commit()
+        importer.reindex_file(home, db.session.get(FitFile, res['file_id']))
+        s = Session.query.filter_by(file_id=res['file_id'], idx=0).one()
+        assert s.load is None and s.load_model is None

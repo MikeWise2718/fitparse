@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import os
+import statistics
 import zipfile
 from pathlib import Path
 
@@ -123,6 +124,58 @@ def apply_weight_fix(sess: dict, watch_kg: float, used_kg: float, source: str) -
     return fix
 
 
+# A session with (almost) no heart rate still trained: a chest strap that never handed over the
+# heart rate it stored underwater, a sensor that died. Counting it as load 0 would pull fitness
+# down, so its load is estimated from the person's own sessions of the same kind instead.
+HR_MIN_SHARE = 0.10              # below this share of records with heart rate, it counts as missing
+EST_REFERENCES = 20              # the nearest sessions in time that the estimate is taken from
+EST_MIN_REFERENCES = 3
+EST_FACTOR_LIMITS = (0.7, 1.3)   # how far the pace may move the estimate either way
+
+
+def hr_missing(sess: dict) -> bool:
+    records = sess.get('records') or []
+    return bool(records) and sum(1 for r in records if r.get('hr')) < HR_MIN_SHARE * len(records)
+
+
+def estimate_load(user_id: int, sess: dict):
+    """Load for a session without heart rate: the median load per hour of the person's nearest
+    sessions (in time) of the same sub-sport, or failing that the same sport, that had heart rate,
+    times this session's duration, times (speed / their median speed) squared, within limits -
+    load per hour grows about with the square of intensity. None without enough references."""
+    hours = (sess.get('timer_s') or 0) / 3600
+    at = sess.get('start_time')
+    if hours <= 0 or at is None:
+        return None
+    base = Session.query.filter(Session.user_id == user_id, Session.load_model == 'trimp', Session.load > 0,
+                                Session.timer_s >= 600, Session.excluded.is_(False))
+    nearest = func.abs(func.julianday(Session.start_time) - func.julianday(at.strftime('%Y-%m-%d %H:%M:%S')))
+    refs = []
+    for q in (base.filter(Session.sport == sess.get('sport'), Session.sub_sport == sess.get('sub_sport')),
+              base.filter(Session.sport == sess.get('sport'))):
+        refs = q.order_by(nearest).limit(EST_REFERENCES).all()
+        if len(refs) >= EST_MIN_REFERENCES:
+            break
+    if len(refs) < EST_MIN_REFERENCES:
+        return None
+    per_hour = statistics.median(r.load / (r.timer_s / 3600) for r in refs)
+    factor = 1.0
+    speeds = [r.avg_speed for r in refs if r.avg_speed]
+    if sess.get('avg_speed') and len(speeds) >= EST_MIN_REFERENCES:
+        lo, hi = EST_FACTOR_LIMITS
+        factor = min(hi, max(lo, (sess['avg_speed'] / statistics.median(speeds)) ** 2))
+    return round(per_hour * hours * factor, 1)
+
+
+def _without_hr(user_id: int, sess: dict) -> None:
+    """The heart-rate figures of a session without heart rate are a reading or two, not the
+    session: drop them, and estimate the load."""
+    sess['avg_hr'] = sess['max_hr'] = sess['trimp'] = None
+    sess['_zones'] = [z for z in sess['_zones'] if z['kind'] != 'hr']
+    sess['load'] = estimate_load(user_id, sess)
+    sess['load_model'] = 'est' if sess['load'] is not None else None
+
+
 def _clean(row: dict, model) -> dict:
     cols = model.__table__.columns.keys()
     return {k: v for k, v in row.items() if k in cols}
@@ -179,6 +232,8 @@ def index_parsed(home: Path, file_row: FitFile, parsed: ParsedFile) -> None:
         fix = (apply_weight_fix(sess, parsed.profile['weight_kg'], *weight_fix_to)
                if weight_fix_to else None)
         metrics.compute_session(sess, zones, load_model)
+        if sess.get('load_model') != 'tss' and hr_missing(sess):
+            _without_hr(user_id, sess)
         sess['excluded'] = sess['idx'] in excluded
         sess['vo2max_carried'] = _vo2_is_carried(user_id, sess, start)
         row = Session(file_id=file_row.id, user_id=user_id, **_clean(sess, Session))
