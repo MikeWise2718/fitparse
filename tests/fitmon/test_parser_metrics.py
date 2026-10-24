@@ -126,6 +126,17 @@ def test_tss_is_100_for_an_hour_at_ftp():
     assert zones[('hr', 4)] == 3600                # 150/185 = 81 %
 
 
+
+def test_a_power_meter_sending_zeros_does_not_score_the_ride():
+    """Power on every record, nearly all of it 0 (a flat battery): the load comes from heart rate."""
+    records = _steady(3600, power=0, hr=165)
+    for rec in records[:10]:
+        rec['power'] = 120
+    sess = {'sport': 'cycling', 'timer_s': 3600, 'records': records}
+    metrics.compute_session(sess, {'ftp': 250, 'max_hr': 185, 'threshold_hr': 165, 'resting_hr': 50})
+    assert not sess['has_power'] and sess.get('tss') is None
+    assert sess['load_model'] == 'trimp' and abs(sess['load'] - 100) < 1
+
 def test_hr_load_is_100_for_an_hour_at_threshold():
     sess = {'sport': 'running', 'timer_s': 3600, 'records': _steady(3600, hr=165, speed=3.0)}
     metrics.compute_session(sess, {'max_hr': 185, 'threshold_hr': 165, 'resting_hr': 50, 'ftp': None})

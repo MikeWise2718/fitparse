@@ -135,7 +135,9 @@ EST_FACTOR_LIMITS = (0.7, 1.3)   # how far the pace may move the estimate either
 
 def hr_missing(sess: dict) -> bool:
     records = sess.get('records') or []
-    return bool(records) and sum(1 for r in records if r.get('hr')) < HR_MIN_SHARE * len(records)
+    if not records:                      # a summary only: missing unless the watch gave an average
+        return sess.get('avg_hr') is None
+    return sum(1 for r in records if r.get('hr')) < HR_MIN_SHARE * len(records)
 
 
 def estimate_load(user_id: int, sess: dict):

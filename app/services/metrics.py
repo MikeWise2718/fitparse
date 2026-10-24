@@ -19,6 +19,11 @@ TRIM_MIN_ACTIVITY_S = 900        # too short to have a meaningful "normal" rate
 TRIM_MIN_MOVING_RATE = 0.5       # m/s; below this there is no progress signal (indoor, pool)
 DEFAULT_MAX_HR = 190
 DEFAULT_REST_HR = 60
+# A sensor that sends zeros (a power meter with a flat battery) leaves a ride with power on every
+# record and almost all of it 0: scored by power, an hour's ride came out at TSS 0. Real rides,
+# coasting included, have non-zero power on at least half their records; below this share the
+# power is treated as not recorded and the load comes from heart rate.
+POWER_MIN_SHARE = 0.25
 
 
 def zone_of(value: float, reference: float, bounds: list) -> int:
@@ -270,7 +275,7 @@ def compute_session(sess: dict, zones: dict, load_model: str = 'auto') -> dict:
     durations = sample_durations(records)
     sess['n_records'] = len(records)
     sess['has_gps'] = any(r.get('lat') is not None for r in records)
-    sess['has_power'] = any(r.get('power') for r in records)
+    sess['has_power'] = bool(records) and sum(1 for r in records if r.get('power')) >= POWER_MIN_SHARE * len(records)
     best, zone_rows = [], []
 
     hrs = [r['hr'] for r in records if r.get('hr')]

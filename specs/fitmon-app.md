@@ -492,7 +492,7 @@ gets an account until A.1–A.5 and the Tailscale HTTPS front (5.3) are done.
 
 ---
 
-### 8.2 Build log - 2026-09-22 to 2026-10-24 (v0.4.4 - v0.7.7)
+### 8.2 Build log - 2026-09-22 to 2026-10-24 (v0.4.4 - v0.7.8)
 
 Versions before 0.4.4 are in `git log`. From there, all deployed to munchlax:
 
@@ -522,6 +522,7 @@ Versions before 0.4.4 are in `git log`. From there, all deployed to munchlax:
 | 0.7.5 | Weekly volume: a gridline every hour; the tooltip lists only sports with time that week, plus a total, both leaving out sports hidden in the legend; the sport filter now applies to the volume charts (Dashboard and Trends) |
 | 0.7.6 | Route map: "by heart-rate zone" colours the track in the zone colours of the HR graph (off when the person has no zones); "by heart rate" stays relative to the activity |
 | 0.7.7 | A session with heart rate on under 10 % of its records (a chest strap that never handed over its swim data) gets an estimated load: the median load per hour of the nearest 20 sessions of that kind with heart rate, times its duration, times (pace ratio)², limited to 0.7–1.3. Stored as load model `est`, shown as "≈"; its one-reading heart-rate figures are dropped |
+| 0.7.8 | Power that is 0 on nearly every record (a sensor sending zeros) no longer scores a ride: under 25 % non-zero, the session counts as without power and gets its load from heart rate (13 gravel rides of 2024 had load ≈ 0). A session with only a summary and no heart rate also gets an estimated load |
 
 Data corrections made on munchlax 2026-10-15: the 70.3 run leg trimmed at the official split
 3:10:01; a 2022 gravel ride saved as a run changed to cycling (it held the 400 m / 1 km / mile
