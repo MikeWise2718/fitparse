@@ -492,7 +492,7 @@ gets an account until A.1–A.5 and the Tailscale HTTPS front (5.3) are done.
 
 ---
 
-### 8.2 Build log - 2026-09-22 to 2026-10-19 (v0.4.4 - v0.7.5)
+### 8.2 Build log - 2026-09-22 to 2026-10-24 (v0.4.4 - v0.7.6)
 
 Versions before 0.4.4 are in `git log`. From there, all deployed to munchlax:
 
@@ -520,6 +520,7 @@ Versions before 0.4.4 are in `git log`. From there, all deployed to munchlax:
 | 0.7.3 | Activities recorded with a body weight below that limit get **running power and calories rescaled** to the nearest own weight (watch profile or weigh-in), at import and re-index; the watch's figures kept (`session_weight_fixes`) and shown in a banner. Bike power (a meter) and work-based ride calories are left alone |
 | 0.7.4 | `fitmon-admin reindex -u NAME [-s]`: a user's re-index in its own process, with the current code, without waiting for the (non-reloading) worker |
 | 0.7.5 | Weekly volume: a gridline every hour; the tooltip lists only sports with time that week, plus a total, both leaving out sports hidden in the legend; the sport filter now applies to the volume charts (Dashboard and Trends) |
+| 0.7.6 | Route map: "by heart-rate zone" colours the track in the zone colours of the HR graph (off when the person has no zones); "by heart rate" stays relative to the activity |
 
 Data corrections made on munchlax 2026-10-15: the 70.3 run leg trimmed at the official split
 3:10:01; a 2022 gravel ride saved as a run changed to cycling (it held the 400 m / 1 km / mile

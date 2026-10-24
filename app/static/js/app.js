@@ -608,9 +608,22 @@ async function drawMap(id, hasGps) {
 function paintTrack() {
     const track = state.track; if (!track || !state.map) return;
     if (state.trackLayer) state.trackLayer.remove();
-    const pts = track.geometry.coordinates.map(([lon, lat]) => [lat, lon]), by = $('det-map-color').value, vals = by && track.properties[by];
+    const sel = $('det-map-color'), hrz = state.session && state.session.hr_zones;
+    // Zone colouring needs the person's zones; without them the option is off and falls back to relative.
+    sel.querySelector('option[value="hrzone"]').disabled = !hrz;
+    const zoned = sel.value === 'hrzone' && hrz, by = sel.value === 'hrzone' ? 'hr' : sel.value;
+    const pts = track.geometry.coordinates.map(([lon, lat]) => [lat, lon]), vals = by && track.properties[by];
     const group = L.featureGroup();
-    if (vals && vals.some((v) => v != null)) { const clean = vals.filter((v) => v != null).sort((a, b) => a - b), lo = clean[Math.floor(clean.length * .05)], hi = clean[Math.floor(clean.length * .95)] || lo + 1;
+    if (zoned && vals && vals.some((v) => v != null)) {
+        // The same colours as the zone-coloured HR chart; runs of one zone are drawn as one line.
+        const zc = (v) => HR_ZONE_COLORS[v == null ? 0 : hrZoneOf(v, hrz.bounds_bpm)];
+        // Segment i (point i-1 to i) takes the zone of point i, as in the relative colouring.
+        let start = 0;
+        for (let i = 2; i <= pts.length; i++) {
+            if (i < pts.length && zc(vals[i]) === zc(vals[start + 1])) continue;
+            L.polyline(pts.slice(start, i), {color: zc(vals[start + 1]), weight: 4}).addTo(group); start = i - 1;
+        } }
+    else if (vals && vals.some((v) => v != null)) { const clean = vals.filter((v) => v != null).sort((a, b) => a - b), lo = clean[Math.floor(clean.length * .05)], hi = clean[Math.floor(clean.length * .95)] || lo + 1;
         for (let i = 1; i < pts.length; i++) { const f = Math.max(0, Math.min(1, ((vals[i] ?? lo) - lo) / (hi - lo || 1))); L.polyline([pts[i - 1], pts[i]], {color: `hsl(${(1 - f) * 220}, 85%, 45%)`, weight: 4}).addTo(group); } }
     else L.polyline(pts, {color: '#0b6bcb', weight: 4}).addTo(group);
     L.polyline(pts, {weight: 18, opacity: 0}).addTo(group);          // click target, not drawn
