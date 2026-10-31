@@ -49,6 +49,17 @@ main { padding: 16px; max-width: 1400px; margin: 0 auto; }
 .up { color: var(--good); } .down { color: var(--bad); } .muted { color: var(--muted); }
 
 .chart { position: relative; height: 260px; } .chart.tall { height: 340px; } .chart.short { height: 170px; }
+button.mini { padding: 2px 7px; font-size: 12px; line-height: 1.4; }
+.panel h2 button.mini { margin-left: 4px; vertical-align: 1px; }
+/* Full screen for any chart's panel: the button sits at the right of its heading. */
+.fs-btn { float: right; padding: 0 6px; font-size: 15px; line-height: 1.3; background: none; border: 1px solid var(--line);
+          border-radius: 5px; color: var(--muted); cursor: pointer; }
+.fs-btn:hover { color: inherit; }
+.panel.full { position: fixed; inset: 10px; z-index: 3000; margin: 0; overflow: auto; display: flex; flex-direction: column;
+              box-shadow: 0 10px 40px rgba(0, 0, 0, .35); }
+.panel.full .chart, .panel.full .chart.tall, .panel.full .chart.short { flex: 1 1 0; height: auto; min-height: 240px; }
+body.has-full { overflow: hidden; }
+body.has-full::before { content: ''; position: fixed; inset: 0; background: rgba(0, 0, 0, .45); z-index: 2999; }
 #map { height: 340px; border-radius: 6px; }
 
 /* Activity page: movable, collapsible panels. Map and zones are half width, the rest span both

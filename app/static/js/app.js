@@ -47,10 +47,34 @@ function chart(id, config) {
     const activityAt = config.activityAt; delete config.activityAt;
     config.options = Object.assign({responsive: true, maintainAspectRatio: false, animation: false,
         interaction: {mode: 'index', intersect: false}}, config.options || {});
+    // Zoom and pan along x, switched on only in full screen: on the page the wheel scrolls the page.
+    const full = !!el.closest('.panel.full'), plugins = config.options.plugins = config.options.plugins || {};
+    plugins.zoom = {zoom: {wheel: {enabled: full}, pinch: {enabled: full}, mode: 'x'}, pan: {enabled: full, mode: 'x'},
+                    limits: {x: {minRange: 2}}};
     if (activityAt) linkActivities(config.options, activityAt);
     state.charts[id] = new Chart(el, config);
     if (activityAt) linkMiddleClick(state.charts[id], activityAt); else el.activityAt = null;
+    addFullScreen(el);
+    if (!el.dataset.dblReset) { el.dataset.dblReset = '1'; el.addEventListener('dblclick', () => state.charts[id] && state.charts[id].resetZoom()); }
     return state.charts[id];
+}
+// Every chart's panel gets a full-screen button. In full screen the charts fill the window and
+// zoom (wheel, pinch) and pan (drag) along the time axis; a double click resets; Esc closes.
+function addFullScreen(el) {
+    const panel = el.closest('.panel'); if (!panel || panel.querySelector('.fs-btn')) return;
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'fs-btn';
+    b.title = 'Full screen (Esc closes). There: scroll to zoom, drag to pan, double-click to reset'; b.textContent = '⛶';
+    b.addEventListener('click', (ev) => { ev.stopPropagation(); fullScreen(panel, !panel.classList.contains('full')); });
+    (panel.querySelector('h2') || panel).appendChild(b);
+}
+function fullScreen(panel, on) {
+    document.querySelectorAll('.panel.full').forEach((p) => { if (p !== panel) p.classList.remove('full'); });
+    panel.classList.toggle('full', on); document.body.classList.toggle('has-full', on);
+    Object.values(state.charts).filter((c) => c && c.canvas && panel.contains(c.canvas)).forEach((c) => {
+        const z = c.options.plugins.zoom; z.zoom.wheel.enabled = z.zoom.pinch.enabled = z.pan.enabled = on;
+        if (!on) c.resetZoom('none');
+        c.update('none'); c.resize();
+    });
 }
 // Charts whose points are activities pass `activityAt(datasetIndex, index) -> session id or null`.
 // A click opens the activity; Ctrl/Cmd/Shift-click or a middle click opens it in a new tab.
@@ -169,8 +193,23 @@ async function initialRange() {
 }
 function setPreset(days) { if (days === 'all') { $('flt-from').value = ''; $('flt-to').value = ''; return; }
     const d = new Date(Date.now() - days * 86400000); $('flt-from').value = d.toISOString().slice(0, 10); $('flt-to').value = ''; }
+// ◀ ▶ move the range by its own length. An empty "to" means today, and stepping forward
+// past today opens the end again. "All time" (no "from") has nowhere to move.
+const isoDay = (t) => new Date(t).toISOString().slice(0, 10);
+function shiftRange(dir) {
+    if (!$('flt-from').value) return;
+    const today = Date.parse(isoDay(Date.now())), to = $('flt-to').value ? Date.parse($('flt-to').value) : today;
+    const from = Date.parse($('flt-from').value), span = to - from;
+    let nt = to + dir * span;
+    if (nt >= today) { nt = today; $('flt-to').value = ''; } else $('flt-to').value = isoDay(nt);
+    $('flt-from').value = isoDay(nt - span);
+    state.rangeNote = ''; showNote(); reload();
+}
+function rangeButtons() {
+    $('flt-back').disabled = !$('flt-from').value; $('flt-fwd').disabled = !$('flt-from').value || !$('flt-to').value;
+}
 
-function showNote() { $('flt-note').textContent = [state.rangeNote, state.staleNote].filter(Boolean).join(' · '); }
+function showNote() { $('flt-note').textContent = [state.rangeNote, state.staleNote].filter(Boolean).join(' · '); rangeButtons(); }
 const VIEWS = {dashboard: loadDashboard, activities: () => loadActivities(true), detail: loadDetail, trends: loadTrends,
                body: loadBody, gear: loadGear, explorer: loadExplorer, import: loadImport, settings: loadSettings, admin: loadAdmin,
                about: loadAbout};
@@ -263,8 +302,8 @@ function volumeChart(id, data, metric) {
                     footer: (items) => (items.length > 1 ? `Total: ${volumeValue(items.reduce((a, t) => a + t.parsed.y, 0), metric)}` : '')}}}}});
 }
 async function loadDashboard() {
-    const [d, fit, vol, cal] = await Promise.all([api('/api/dashboard'), api('/api/fitness?' + range()),
-        api('/api/trends/volume?bucket=week&' + query()), api('/api/trends/calendar')]);
+    const [d, fit, vol] = await Promise.all([api('/api/dashboard'), api('/api/fitness?' + range()),
+        api('/api/trends/volume?bucket=week&' + query()), drawCalendar()]);
     $('dash-empty').style.display = d.total_sessions ? 'none' : '';
     const delta = (v) => v == null ? '' : `<span class="${v >= 0 ? 'up' : 'down'}">${v >= 0 ? '+' : ''}${v} in 90 d</span>`;
     const vs = (now, avg, unit) => avg ? `4-wk avg ${avg} ${unit}` : '';
@@ -299,8 +338,17 @@ async function loadDashboard() {
         options: {scales: {x: timeAxis(), y: {position: 'left', title: {display: true, text: 'CTL · ATL · TSB'}},
                            y1: {position: 'right', grid: {drawOnChartArea: false}, title: {display: true, text: 'daily load'}}}}});
     state.dashVolume = vol; volumeChart('dash-volume-chart', vol, $('dash-volume-metric').value);
-
-    const year = new Date().getFullYear(), byDay = Object.fromEntries(cal.days.map((c) => [c.day, c]));
+    const recent = await api('/api/activities?limit=8');
+    table('dash-recent', [{label: 'When', get: (r) => fmt.when(r.start_time, r.utc_offset_s)}, {label: 'Sport', html: (r) => tag(r.sport, r.sub_sport)},
+        {label: 'Dist', num: 1, get: (r) => fmt.dist(r.distance_m, r.sport)}, {label: 'Time', num: 1, get: (r) => fmt.dur(r.timer_s)},
+        {label: 'Load', num: 1, get: (r) => fmt.num(r.load)}], recent.activities, (r) => go('detail', r.id));
+}
+// The training-days calendar shows one calendar year; its arrows step through the years.
+async function drawCalendar(step = 0) {
+    const now = new Date().getFullYear();
+    state.calYear = Math.min(now, (state.calYear || now) + step);
+    const year = state.calYear, cal = await api(`/api/trends/calendar?year=${year}`);
+    const byDay = Object.fromEntries(cal.days.map((c) => [c.day, c]));
     const first = new Date(Date.UTC(year, 0, 1)); let cells = '';
     // Shaded by load (it used to be hours, so a short hard day came out paler than a long easy one),
     // relative to the year's 95th percentile so one huge day does not wash out the rest.
@@ -312,10 +360,8 @@ async function loadDashboard() {
         cells += `<i title="${key}${c ? ` · ${c.hours} h · load ${c.load}` : ''}" style="${c ? `background:rgba(11,107,203,${a})` : ''}"></i>`;
     }
     $('dash-calendar').innerHTML = cells; $('dash-cal-year').textContent = `${year} · ${cal.days.length} days`;
-    const recent = await api('/api/activities?limit=8');
-    table('dash-recent', [{label: 'When', get: (r) => fmt.when(r.start_time, r.utc_offset_s)}, {label: 'Sport', html: (r) => tag(r.sport, r.sub_sport)},
-        {label: 'Dist', num: 1, get: (r) => fmt.dist(r.distance_m, r.sport)}, {label: 'Time', num: 1, get: (r) => fmt.dur(r.timer_s)},
-        {label: 'Load', num: 1, get: (r) => fmt.num(r.load)}], recent.activities, (r) => go('detail', r.id));
+    $('dash-cal-next').disabled = year >= now;
+    return cal;
 }
 
 // ---------------------------------------------------------------- activities
@@ -850,13 +896,16 @@ const scatterLine = (label, pts, col, extra = {}) => Object.assign({label, data:
 // and a gridline - with the year on January and on the first mark. Long spans thin out to
 // quarters, then years. The tooltip still shows the exact day.
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// Marks are worked out for the visible stretch (lo..hi), so a zoomed chart gets finer ones.
 const monthMarkCache = new WeakMap();
-function monthMarks(labels) {
-    if (monthMarkCache.has(labels)) return monthMarkCache.get(labels);
+function monthMarks(labels, lo = 0, hi = labels.length - 1) {
+    const cache = monthMarkCache.get(labels) || new Map(), key = `${lo}:${hi}`;
+    monthMarkCache.set(labels, cache);
+    if (cache.has(key)) return cache.get(key);
     const starts = []; let prev = null;
-    labels.forEach((l, i) => { const m = String(l).slice(0, 7); if (/^\d{4}-\d{2}$/.test(m) && m !== prev) { starts.push([i, m]); prev = m; } });
+    labels.slice(lo, hi + 1).forEach((l, k) => { const m = String(l).slice(0, 7); if (/^\d{4}-\d{2}$/.test(m) && m !== prev) { starts.push([lo + k, m]); prev = m; } });
     // The first point is rarely the 1st of its month; marking it would put "Oct" on 10 October.
-    if (starts.length > 1 && starts[0][0] === 0 && String(labels[0]).slice(8, 10) > '07') starts.shift();
+    if (starts.length > 1 && starts[0][0] === lo && String(labels[lo]).slice(8, 10) > '07') starts.shift();
     let marks = null;
     if (starts.length >= 2) {
         const step = starts.length <= 15 ? 1 : starts.length <= 40 ? 3 : 12;
@@ -867,7 +916,7 @@ function monthMarks(labels) {
             marks.set(i, step === 12 ? year : (mon === 1 || !marks.size) ? [MONTHS[mon - 1], year] : MONTHS[mon - 1]);
         }
     }
-    monthMarkCache.set(labels, marks);
+    cache.set(key, marks);
     return marks;
 }
 // A tick whose label callback returns null is dropped along with its gridline, so every tick
@@ -876,12 +925,15 @@ function monthMarks(labels) {
 // `bars`: for bar charts the line goes between bars (before the month's first bar) and the
 // name is centred under that bar - otherwise a monthly chart gets a line through every bar.
 const timeAxis = (extra = {}, {bars = false} = {}) => Object.assign({type: 'category',
-    ticks: {autoSkip: false, maxRotation: 0, align: bars ? 'center' : 'start', padding: 4, callback(value, index) {
-        const labels = this.chart.data.labels, marks = monthMarks(labels);
-        if (marks) return marks.get(index) ?? null;
-        // Under two months of data: plain days, thinned to about eight.
-        const every = Math.max(1, Math.ceil(labels.length / 8));
-        return index % every ? null : String(labels[index]).slice(5, 10);
+    // `value` is the label's index in the data; `index` only counts the ticks shown, which is not
+    // the same once the chart is zoomed.
+    ticks: {autoSkip: false, maxRotation: 0, align: bars ? 'center' : 'start', padding: 4, callback(value) {
+        const labels = this.chart.data.labels, lo = Math.max(0, Math.round(this.min ?? 0));
+        const hi = Math.min(labels.length - 1, Math.round(this.max ?? labels.length - 1)), marks = monthMarks(labels, lo, hi);
+        if (marks) return marks.get(value) ?? null;
+        // Under two months in view: plain days, thinned to about eight.
+        const every = Math.max(1, Math.ceil((hi - lo + 1) / 8));
+        return value % every ? null : String(labels[value]).slice(5, 10);
     }},
     grid: {color: 'rgba(110,117,133,.55)', lineWidth: 1, tickLength: 8, offset: bars}}, extra);
 async function loadTrends() {
@@ -1103,6 +1155,9 @@ function wire() {
     document.querySelectorAll('#tabs a').forEach((a) => a.addEventListener('click', () => go(a.dataset.view)));
     document.body.addEventListener('click', (ev) => { const a = ev.target.closest('[data-goto]'); if (a) go(a.dataset.goto); });
     ['flt-from', 'flt-to', 'flt-sport'].forEach((id) => $(id).addEventListener('change', () => { if (id !== 'flt-sport') state.rangeNote = ''; showNote(); reload(); }));
+    $('flt-back').addEventListener('click', () => shiftRange(-1)); $('flt-fwd').addEventListener('click', () => shiftRange(1));
+    $('dash-cal-prev').addEventListener('click', () => drawCalendar(-1)); $('dash-cal-next').addEventListener('click', () => drawCalendar(1));
+    document.addEventListener('keydown', (ev) => { const p = document.querySelector('.panel.full'); if (ev.key === 'Escape' && p) fullScreen(p, false); });
     $('flt-preset').addEventListener('change', (ev) => { if (ev.target.value) { setPreset(ev.target.value === 'all' ? 'all' : +ev.target.value); ev.target.value = ''; state.rangeNote = ''; showNote(); reload(); } });
     $('logout').addEventListener('click', async () => { await api('/api/auth/logout', {method: 'POST'}); location.href = '/login'; });
     $('dash-volume-metric').addEventListener('change', (ev) => volumeChart('dash-volume-chart', state.dashVolume, ev.target.value));
