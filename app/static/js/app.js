@@ -206,7 +206,12 @@ function shiftRange(dir) {
     state.rangeNote = ''; showNote(); reload();
 }
 function rangeButtons() {
-    $('flt-back').disabled = !$('flt-from').value; $('flt-fwd').disabled = !$('flt-from').value || !$('flt-to').value;
+    const from = $('flt-from').value, to = $('flt-to').value;
+    $('flt-back').disabled = !from; $('flt-fwd').disabled = !from || !to;
+    // Echo the preset the dates amount to: "the last N days up to today", or all time.
+    const days = !to && from ? Math.round((Date.parse(isoDay(Date.now())) - Date.parse(from)) / 86400000) : null;
+    $('flt-presets').querySelectorAll('button').forEach((b) => b.classList.toggle('on',
+        b.dataset.days === 'all' ? !from && !to : days === +b.dataset.days));
 }
 
 function showNote() { $('flt-note').textContent = [state.rangeNote, state.staleNote].filter(Boolean).join(' · '); rangeButtons(); }
@@ -1158,7 +1163,8 @@ function wire() {
     $('flt-back').addEventListener('click', () => shiftRange(-1)); $('flt-fwd').addEventListener('click', () => shiftRange(1));
     $('dash-cal-prev').addEventListener('click', () => drawCalendar(-1)); $('dash-cal-next').addEventListener('click', () => drawCalendar(1));
     document.addEventListener('keydown', (ev) => { const p = document.querySelector('.panel.full'); if (ev.key === 'Escape' && p) fullScreen(p, false); });
-    $('flt-preset').addEventListener('change', (ev) => { if (ev.target.value) { setPreset(ev.target.value === 'all' ? 'all' : +ev.target.value); ev.target.value = ''; state.rangeNote = ''; showNote(); reload(); } });
+    $('flt-presets').addEventListener('click', (ev) => { const b = ev.target.closest('button'); if (!b) return;
+        setPreset(b.dataset.days === 'all' ? 'all' : +b.dataset.days); state.rangeNote = ''; showNote(); reload(); });
     $('logout').addEventListener('click', async () => { await api('/api/auth/logout', {method: 'POST'}); location.href = '/login'; });
     $('dash-volume-metric').addEventListener('change', (ev) => volumeChart('dash-volume-chart', state.dashVolume, ev.target.value));
     let t; $('act-search').addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => loadActivities(true), 250); });
