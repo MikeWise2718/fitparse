@@ -910,7 +910,7 @@ async function loadTrends() {
     table('tr-best-table', [{label: 'Distance', get: (b) => fmt.window('pace', b.window)}, {label: 'Best ever', num: 1, get: (b) => fmt.dur(b.value)}, {label: 'Pace', num: 1, get: (b) => fmt.speed(b.window / b.value, 'running')}, {label: 'On', get: (b) => fmt.day(b.at)},
         {label: 'In range', num: 1, get: (b) => { const r = best.range.find((x) => x.window === b.window); return r ? fmt.dur(r.value) : ''; }}], best.all_time, (b) => go('detail', b.session_id));
     const prSel = $('tr-pr-kind'); if (!prSel.options.length) prSel.innerHTML = [['power', 1200], ['power', 300], ['power', 60], ['pace', 5000], ['pace', 10000], ['pace', 1000]].map(([k, w]) => `<option value="${k}:${w}">${k === 'power' ? 'power ' : 'run '}${fmt.window(k, w)}</option>`).join('');
-    loadRecordProgression(); loadEfficiency(); loadEconomy(); loadRideCost();
+    loadRecordProgression(); loadEfficiency(); loadEconomy(); loadCost();
     const teSports = [...new Set(te.points.map((p) => p.sport))], teBy = teSports.map((sp) => te.points.filter((p) => p.sport === sp));
     chart('tr-te-chart', {type: 'scatter', data: {datasets: teSports.map((sp, i) => ({label: fmt.sport(sp), backgroundColor: color(sp, i), data: teBy[i].map((p) => ({x: p.aerobic, y: p.anaerobic || 0}))}))},
         options: {interaction: {mode: 'nearest'}, scales: {x: {min: 0, max: 5, title: {display: true, text: 'aerobic'}}, y: {min: 0, max: 5, title: {display: true, text: 'anaerobic'}}}},
@@ -933,14 +933,15 @@ async function loadRecordProgression() { const [kind, w] = $('tr-pr-kind').value
 async function loadEfficiency() { const d = await api(`/api/trends/efficiency?sport=${$('tr-eff-sport').value}&` + range());
     chart('tr-eff-chart', {type: 'line', data: {labels: d.points.map((p) => fmt.day(p.at)), datasets: [scatterLine('efficiency', d.points.map((p) => p.efficiency), '#0b6bcb'), scatterLine('decoupling %', d.points.map((p) => p.decoupling), '#e4572e', {yAxisID: 'y1', showLine: false})]},
         options: {scales: {x: timeAxis(), y1: {position: 'right', grid: {drawOnChartArea: false}}}}, activityAt: (ds, i) => d.points[i].id}); }
-async function loadRideCost() {
-    const d = await api('/api/trends/ride-cost?' + range()), pts = d.points, r = d.reference;
+async function loadCost() {
+    const sport = $('tr-cost-sport').value, run = sport === 'running', noun = run ? 'run' : 'ride';
+    const d = await api(`/api/trends/cost?sport=${sport}&` + range()), pts = d.points, r = d.reference;
     $('tr-cost-ref').textContent = r.ftp && r.max_hr
-        ? `Scored against today's FTP ${r.ftp} W and threshold heart rate ${r.threshold_hr} bpm (max ${r.max_hr}, resting ${r.resting_hr}).`
-        : 'Needs an FTP from a ride and a max heart rate (watch profile or Settings).';
+        ? `Scored against today's ${run ? 'running-power ' : ''}FTP ${r.ftp} W and threshold heart rate ${r.threshold_hr} bpm (max ${r.max_hr}, resting ${r.resting_hr}).`
+        : `Needs an FTP from a ${noun} file${run ? '' : ' or Settings'} and a max heart rate (watch profile or Settings).`;
     chart('tr-cost-chart', {type: 'line', data: {labels: pts.map((p) => fmt.day(p.at)), datasets: [
-        scatterLine('steady ride (%)', pts.map((p) => (p.steady ? p.ratio : null)), '#0b6bcb', {showLine: false}),
-        scatterLine('other ride', pts.map((p) => (p.steady ? null : p.ratio)), '#8a93a6', {showLine: false, backgroundColor: 'transparent'}),
+        scatterLine(`steady ${noun} (%)`, pts.map((p) => (p.steady ? p.ratio : null)), '#0b6bcb', {showLine: false}),
+        scatterLine(`other ${noun}`, pts.map((p) => (p.steady ? null : p.ratio)), '#8a93a6', {showLine: false, backgroundColor: 'transparent'}),
         scatterLine(`median of ${d.rolling_days} days`, pts.map((p) => p.rolling ?? null), '#08457e', {pointRadius: 0, borderWidth: 2.2, spanGaps: true})]},
         options: {scales: {x: timeAxis(), y: {title: {display: true, text: '% of expected'}}},
             plugins: {tooltip: {callbacks: {footer: (items) => { const p = pts[items[0].dataIndex];
@@ -1134,6 +1135,7 @@ function wire() {
     $('det-delete').addEventListener('click', async () => { if (confirm('Delete this file and everything derived from it?')) { await api(`/api/files/${state.session.file.id}/delete`, {method: 'POST'}); go('activities'); } });
     ['tr-volume-bucket'].forEach((id) => $(id).addEventListener('change', loadTrends)); $('tr-volume-metric').addEventListener('change', (ev) => volumeChart('tr-volume-chart', state.trVolume, ev.target.value));
     $('tr-pr-kind').addEventListener('change', loadRecordProgression); $('tr-eff-sport').addEventListener('change', loadEfficiency);
+    $('tr-cost-sport').addEventListener('change', loadCost);
     $('exp-file').addEventListener('change', (ev) => openExplorerFile(+ev.target.value)); let t2; $('exp-file-search').addEventListener('input', () => { clearTimeout(t2); t2 = setTimeout(() => loadExplorer(), 250); });
     ['exp-standard', 'exp-raw', 'exp-hide-unknown'].forEach((id) => $(id).addEventListener('change', loadExplorerRows));
     $('exp-prev').addEventListener('click', () => { state.exp.page--; loadExplorerRows(); }); $('exp-next').addEventListener('click', () => { state.exp.page++; loadExplorerRows(); });

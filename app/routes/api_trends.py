@@ -2,7 +2,7 @@ from datetime import date
 
 from flask import Blueprint, current_app, g, jsonify, request
 
-from ..services import fitness, ridecost
+from ..services import cost, fitness
 from ..settings import get_user_settings
 
 trends_bp = Blueprint('trends', __name__)
@@ -102,10 +102,13 @@ def efficiency():
     return jsonify({'sport': sport, 'points': fitness.efficiency_series(g.user.id, sport, start, end)})
 
 
-@trends_bp.route('/api/trends/ride-cost')
-def ride_cost():
+@trends_bp.route('/api/trends/cost')
+def cost_per_watt():
     start, end = _range()
-    return jsonify(ridecost.ride_cost_series(current_app.config['FITMON_HOME'], g.user.id, start, end))
+    sport = request.args.get('sport', 'cycling')
+    if sport not in cost.SPORTS:
+        return jsonify({'error': f'sport must be one of {", ".join(cost.SPORTS)}'}), 400
+    return jsonify(cost.cost_series(current_app.config['FITMON_HOME'], g.user.id, sport, start, end))
 
 
 @trends_bp.route('/api/trends/swim')

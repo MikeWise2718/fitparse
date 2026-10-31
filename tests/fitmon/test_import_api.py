@@ -625,7 +625,7 @@ def test_ride_cost_compares_heart_rate_load_with_power_load(app, home, alice, im
     from app.settings import save_user_settings
     save_user_settings(home, alice.user_id, {'zones': {'ftp': 250, 'max_hr': 185, 'threshold_hr': 165, 'resting_hr': 50}})
     import_file(alice.user_id, SAMPLE_POWER)
-    d = alice.get('/api/trends/ride-cost').get_json()
+    d = alice.get('/api/trends/cost?sport=cycling').get_json()
     assert d['reference']['ftp'] == 250 and len(d['points']) == 1
     p = d['points'][0]
     with app.app_context():
@@ -635,7 +635,7 @@ def test_ride_cost_compares_heart_rate_load_with_power_load(app, home, alice, im
     assert p['steady'] == (p['why'] is None) and (not p['steady'] or p['rolling'] == p['ratio'])
     # A lower FTP today makes the same watts "expected" to cost more, so the ratio falls.
     save_user_settings(home, alice.user_id, {'zones': {'ftp': 200, 'max_hr': 185, 'threshold_hr': 165, 'resting_hr': 50}})
-    assert alice.get('/api/trends/ride-cost').get_json()['points'][0]['ratio'] < p['ratio']
+    assert alice.get('/api/trends/cost?sport=cycling').get_json()['points'][0]['ratio'] < p['ratio']
 
 
 def test_a_rides_ftp_never_comes_from_a_run_file(app, home, alice, import_file):
@@ -654,3 +654,28 @@ def test_a_rides_ftp_never_comes_from_a_run_file(app, home, alice, import_file):
         assert importer.resolve_zones(home, alice.user_id, {}, at=ride_at)['ftp'] == 160
         assert importer.resolve_zones(home, alice.user_id, {'ftp': 320}, at=ride_at, ride_file=False)['ftp'] == 160
         assert importer.resolve_zones(home, alice.user_id, {'ftp': 170}, at=ride_at)['ftp'] == 170
+
+
+def test_run_cost_uses_the_running_power_ftp(app, home, alice, import_file):
+    """Runs are scored against the running-power FTP from run files; treadmill runs stay out of the line."""
+    from app.models import FitFile, ProfileSnapshot, Session, SessionSport, db
+    from app.services import importer
+    from app.settings import save_user_settings
+    save_user_settings(home, alice.user_id, {'zones': {'ftp': 160, 'max_hr': 185, 'threshold_hr': 165, 'resting_hr': 50}})
+    fid = import_file(alice.user_id, SAMPLE_POWER)['file_id']
+    with app.app_context():
+        db.session.add(SessionSport(file_id=fid, idx=0, user_id=alice.user_id, sport='running', sub_sport='treadmill'))
+        db.session.commit()
+        importer.reindex_file(home, db.session.get(FitFile, fid))
+        ProfileSnapshot.query.filter_by(file_id=fid).delete()
+        s = Session.query.filter_by(file_id=fid).one()
+        db.session.add(ProfileSnapshot(file_id=fid, user_id=alice.user_id, at=s.start_time, ftp=300))
+        db.session.commit()
+        norm, hours = s.norm_power, s.timer_s / 3600
+    assert alice.get('/api/trends/cost?sport=cycling').get_json()['points'] == []
+    d = alice.get('/api/trends/cost?sport=running').get_json()
+    assert d['reference']['ftp'] == 300                     # not the cycling 160 from Settings
+    p = d['points'][0]
+    assert abs(p['expected'] - hours * (norm / 300) ** 2 * 100) < 0.2
+    assert not p['steady'] and p['why'] == 'treadmill' and 'rolling' not in p
+    assert alice.get('/api/trends/cost?sport=swimming').status_code == 400
