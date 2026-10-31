@@ -932,18 +932,28 @@ function monthMarks(labels, lo = 0, hi = labels.length - 1) {
 // horizontal grid, and the name sits just right of it, inside the month it names.
 // `bars`: for bar charts the line goes between bars (before the month's first bar) and the
 // name is centred under that bar - otherwise a monthly chart gets a line through every bar.
+// An offset gridline sits halfway between its tick and the previous tick LEFT STANDING, so
+// with only Januaries left it landed in July and the last half year read as the next year.
+// Bar charts therefore keep every tick, with an empty label and an invisible line between marks.
+const GRID_COLOR = 'rgba(110,117,133,.55)';
+function visibleMarks(scale) {
+    const labels = scale.chart.data.labels, lo = Math.max(0, Math.round(scale.min ?? 0));
+    const hi = Math.min(labels.length - 1, Math.round(scale.max ?? labels.length - 1));
+    return {labels, lo, hi, marks: monthMarks(labels, lo, hi)};
+}
 const timeAxis = (extra = {}, {bars = false} = {}) => Object.assign({type: 'category',
     // `value` is the label's index in the data; `index` only counts the ticks shown, which is not
     // the same once the chart is zoomed.
     ticks: {autoSkip: false, maxRotation: 0, align: bars ? 'center' : 'start', padding: 4, callback(value) {
-        const labels = this.chart.data.labels, lo = Math.max(0, Math.round(this.min ?? 0));
-        const hi = Math.min(labels.length - 1, Math.round(this.max ?? labels.length - 1)), marks = monthMarks(labels, lo, hi);
-        if (marks) return marks.get(value) ?? null;
+        const {labels, lo, hi, marks} = visibleMarks(this), none = bars ? '' : null;
+        if (marks) return marks.get(value) ?? none;
         // Under two months in view: plain days, thinned to about eight.
         const every = Math.max(1, Math.ceil((hi - lo + 1) / 8));
-        return value % every ? null : String(labels[value]).slice(5, 10);
+        return value % every ? none : String(labels[value]).slice(5, 10);
     }},
-    grid: {color: 'rgba(110,117,133,.55)', lineWidth: 1, tickLength: 8, offset: bars}}, extra);
+    grid: {color: bars ? (ctx) => { const tick = ctx.tick, {marks} = visibleMarks(ctx.scale);
+        return tick && (marks ? marks.has(tick.value) : tick.label) ? GRID_COLOR : 'transparent'; } : GRID_COLOR,
+           lineWidth: 1, tickLength: 8, offset: bars}}, extra);
 async function loadTrends() {
     const q = query(), rq = range().toString(), sportOnly = $('flt-sport').value ? `sport=${$('flt-sport').value}&` : '';
     const [vo2, vol, pc, best, te, swim, strength, body] = await Promise.all([api('/api/trends/vo2max?' + q), api(`/api/trends/volume?bucket=${$('tr-volume-bucket').value}&` + q),
