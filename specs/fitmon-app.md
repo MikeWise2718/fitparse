@@ -492,7 +492,7 @@ gets an account until A.1–A.5 and the Tailscale HTTPS front (5.3) are done.
 
 ---
 
-### 8.2 Build log - 2026-09-22 to 2026-10-31 (v0.4.4 - v0.8.3)
+### 8.2 Build log - 2026-09-22 to 2026-10-31 (v0.4.4 - v0.8.4)
 
 Versions before 0.4.4 are in `git log`. From there, all deployed to munchlax:
 
@@ -528,6 +528,7 @@ Versions before 0.4.4 are in `git log`. From there, all deployed to munchlax:
 | 0.8.1 | The ride-cost chart becomes **Cost per watt** with a cycling/running choice (`services/cost.py`, `/api/trends/cost?sport=`). Runs are scored against the running-power FTP from run files; treadmill runs and multisport legs are hollow and stay out of the 28-day median |
 | 0.8.2 | Every chart gets a full-screen button (⛶): the panel fills the window, where the wheel/pinch zooms and a drag pans along the time axis, double-click resets, Esc closes (chartjs-plugin-zoom 2.0.1 + hammerjs 2.0.8; axis month marks follow the visible stretch). ◀ ▶ around the date range move it by its own length; 3- and 5-year presets. The training-days calendar steps through years. Static JS/CSS URLs carry `?v=<version>`, so a deploy reaches the browser without a hard reload |
 | 0.8.3 | The range presets are a row of buttons (30d · 90d · 1y · 2y · 3y · 5y · All) instead of a dropdown; the one the dates amount to is highlighted, none after ◀ ▶ or typed dates |
+| 0.8.4 | Fix: a chart left in full screen when the page changed (a click on one of its points opens the activity) left a grey layer over everything. Changing page now closes full screen, and the dimming is the panel's own shadow, so it cannot outlive it |
 
 Data corrections made on munchlax 2026-10-15: the 70.3 run leg trimmed at the official split
 3:10:01; a 2022 gravel ride saved as a run changed to cycling (it held the 400 m / 1 km / mile

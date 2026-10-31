@@ -226,6 +226,9 @@ function route() {
     const [view, arg] = (location.hash.slice(1) || 'dashboard').split('/');
     const name = VIEWS[view] ? view : 'dashboard';
     state.view = name; state.arg = arg;
+    // A chart left in full screen on the page being left (a click on one of its points opens the
+    // activity) would stay fixed over everything, hidden, with the page unable to scroll.
+    document.querySelectorAll('.panel.full').forEach((p) => fullScreen(p, false));
     document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${name}`));
     const tab = name === 'detail' ? 'activities' : routesUI.tabFor[name] || name;
     document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.view === tab));
