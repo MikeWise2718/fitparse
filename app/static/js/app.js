@@ -302,10 +302,13 @@ async function loadDashboard() {
 
     const year = new Date().getFullYear(), byDay = Object.fromEntries(cal.days.map((c) => [c.day, c]));
     const first = new Date(Date.UTC(year, 0, 1)); let cells = '';
+    // Shaded by load (it used to be hours, so a short hard day came out paler than a long easy one),
+    // relative to the year's 95th percentile so one huge day does not wash out the rest.
+    const loads = cal.days.map((c) => c.load || 0).sort((x, y) => x - y), top = loads[Math.floor(loads.length * 0.95)] || 1;
     const pad = (first.getUTCDay() + 6) % 7; for (let i = 0; i < pad; i++) cells += '<i style="visibility:hidden"></i>';
     for (let t = first; t.getUTCFullYear() === year; t = new Date(t.getTime() + 86400000)) {
         const key = t.toISOString().slice(0, 10), c = byDay[key];
-        const a = c ? Math.min(1, 0.25 + c.hours / 3) : 0;
+        const a = c ? 0.2 + 0.8 * Math.min(1, (c.load || 0) / top) : 0;
         cells += `<i title="${key}${c ? ` · ${c.hours} h · load ${c.load}` : ''}" style="${c ? `background:rgba(11,107,203,${a})` : ''}"></i>`;
     }
     $('dash-calendar').innerHTML = cells; $('dash-cal-year').textContent = `${year} · ${cal.days.length} days`;
