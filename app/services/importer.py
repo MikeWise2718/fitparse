@@ -45,16 +45,23 @@ def _quota_ok(home: Path, user_id: int, extra: int) -> bool:
             size + extra <= limits['user_quota_mb'] * 1024 * 1024)
 
 
-def resolve_zones(home: Path, user_id: int, profile: dict, at=None) -> dict:
+def resolve_zones(home: Path, user_id: int, profile: dict, at=None, ride_file: bool = True) -> dict:
     """Zone references for one activity: user override > this file's snapshot > the most
-    recent earlier snapshot. Zones are dated - an FTP from 2022 must not score a 2026 ride."""
+    recent earlier snapshot. Zones are dated - an FTP from 2022 must not score a 2026 ride.
+
+    The watch writes the FTP of the file's sport: run files carry the running-power FTP (here
+    250-365 W against a cycling 155-197 W). So the FTP is taken from this file only when it is a
+    ride file (`ride_file`), and the fallback only looks at snapshots of ride files."""
     overrides = get_user_settings(home, user_id)['zones']
     out = {'female': (profile.get('gender') == 'female')}
     for key in ('max_hr', 'threshold_hr', 'resting_hr', 'ftp'):
-        value = overrides.get(key) or profile.get(key)
+        value = overrides.get(key) or (profile.get(key) if key != 'ftp' or ride_file else None)
         if not value:
             q = ProfileSnapshot.query.filter(ProfileSnapshot.user_id == user_id,
                                              getattr(ProfileSnapshot, key).isnot(None))
+            if key == 'ftp':
+                q = q.filter(~ProfileSnapshot.file_id.in_(
+                    db.session.query(Session.file_id).filter(Session.sport.notin_(('cycling', 'transition')))))
             if at is not None:
                 q = q.filter(ProfileSnapshot.at <= at)
             snap = q.order_by(ProfileSnapshot.at.desc()).first()
@@ -209,7 +216,8 @@ def index_parsed(home: Path, file_row: FitFile, parsed: ParsedFile) -> None:
     for dev in parsed.devices:
         db.session.add(Device(file_id=file_row.id, user_id=user_id, **_clean(dev, Device)))
 
-    zones = resolve_zones(home, user_id, parsed.profile, at=start)
+    zones = resolve_zones(home, user_id, parsed.profile, at=start,
+                          ride_file=all(s.get('sport') in ('cycling', 'transition') for s in parsed.sessions))
     load_model = get_user_settings(home, user_id)['load_model']
     garmin = None
     if file_row.garmin_activity_id:

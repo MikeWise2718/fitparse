@@ -910,7 +910,7 @@ async function loadTrends() {
     table('tr-best-table', [{label: 'Distance', get: (b) => fmt.window('pace', b.window)}, {label: 'Best ever', num: 1, get: (b) => fmt.dur(b.value)}, {label: 'Pace', num: 1, get: (b) => fmt.speed(b.window / b.value, 'running')}, {label: 'On', get: (b) => fmt.day(b.at)},
         {label: 'In range', num: 1, get: (b) => { const r = best.range.find((x) => x.window === b.window); return r ? fmt.dur(r.value) : ''; }}], best.all_time, (b) => go('detail', b.session_id));
     const prSel = $('tr-pr-kind'); if (!prSel.options.length) prSel.innerHTML = [['power', 1200], ['power', 300], ['power', 60], ['pace', 5000], ['pace', 10000], ['pace', 1000]].map(([k, w]) => `<option value="${k}:${w}">${k === 'power' ? 'power ' : 'run '}${fmt.window(k, w)}</option>`).join('');
-    loadRecordProgression(); loadEfficiency(); loadEconomy();
+    loadRecordProgression(); loadEfficiency(); loadEconomy(); loadRideCost();
     const teSports = [...new Set(te.points.map((p) => p.sport))], teBy = teSports.map((sp) => te.points.filter((p) => p.sport === sp));
     chart('tr-te-chart', {type: 'scatter', data: {datasets: teSports.map((sp, i) => ({label: fmt.sport(sp), backgroundColor: color(sp, i), data: teBy[i].map((p) => ({x: p.aerobic, y: p.anaerobic || 0}))}))},
         options: {interaction: {mode: 'nearest'}, scales: {x: {min: 0, max: 5, title: {display: true, text: 'aerobic'}}, y: {min: 0, max: 5, title: {display: true, text: 'anaerobic'}}}},
@@ -933,6 +933,21 @@ async function loadRecordProgression() { const [kind, w] = $('tr-pr-kind').value
 async function loadEfficiency() { const d = await api(`/api/trends/efficiency?sport=${$('tr-eff-sport').value}&` + range());
     chart('tr-eff-chart', {type: 'line', data: {labels: d.points.map((p) => fmt.day(p.at)), datasets: [scatterLine('efficiency', d.points.map((p) => p.efficiency), '#0b6bcb'), scatterLine('decoupling %', d.points.map((p) => p.decoupling), '#e4572e', {yAxisID: 'y1', showLine: false})]},
         options: {scales: {x: timeAxis(), y1: {position: 'right', grid: {drawOnChartArea: false}}}}, activityAt: (ds, i) => d.points[i].id}); }
+async function loadRideCost() {
+    const d = await api('/api/trends/ride-cost?' + range()), pts = d.points, r = d.reference;
+    $('tr-cost-ref').textContent = r.ftp && r.max_hr
+        ? `Scored against today's FTP ${r.ftp} W and threshold heart rate ${r.threshold_hr} bpm (max ${r.max_hr}, resting ${r.resting_hr}).`
+        : 'Needs an FTP from a ride and a max heart rate (watch profile or Settings).';
+    chart('tr-cost-chart', {type: 'line', data: {labels: pts.map((p) => fmt.day(p.at)), datasets: [
+        scatterLine('steady ride (%)', pts.map((p) => (p.steady ? p.ratio : null)), '#0b6bcb', {showLine: false}),
+        scatterLine('other ride', pts.map((p) => (p.steady ? null : p.ratio)), '#8a93a6', {showLine: false, backgroundColor: 'transparent'}),
+        scatterLine(`median of ${d.rolling_days} days`, pts.map((p) => p.rolling ?? null), '#08457e', {pointRadius: 0, borderWidth: 2.2, spanGaps: true})]},
+        options: {scales: {x: timeAxis(), y: {title: {display: true, text: '% of expected'}}},
+            plugins: {tooltip: {callbacks: {footer: (items) => { const p = pts[items[0].dataIndex];
+                return [`${p.name ? p.name + ' · ' : ''}${p.minutes} min · NP ${p.np} W · ${p.avg_hr} bpm`,
+                    `load ${fmt.num(p.measured)} measured / ${fmt.num(p.expected)} expected${p.why ? ' · not steady: ' + p.why : ''}`]; }}}}},
+        activityAt: (ds, i) => pts[i].id});
+}
 async function loadEconomy() {
     const d = await api('/api/trends/economy?' + range()), pts = d.points, ft = statute();
     const per = (v) => (v == null ? null : ft ? +(v * 3.28084).toFixed(2) : v), unit = ft ? 'ft/beat' : 'm/beat';

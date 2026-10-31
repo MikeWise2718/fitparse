@@ -617,3 +617,40 @@ def test_a_session_without_heart_rate_gets_an_estimated_load(app, home, alice, i
         importer.reindex_file(home, db.session.get(FitFile, res['file_id']))
         s = Session.query.filter_by(file_id=res['file_id'], idx=0).one()
         assert s.load is None and s.load_model is None
+
+
+def test_ride_cost_compares_heart_rate_load_with_power_load(app, home, alice, import_file):
+    """Measured (heart rate) and expected (power) load of a ride, both at today's thresholds."""
+    from app.models import Session
+    from app.settings import save_user_settings
+    save_user_settings(home, alice.user_id, {'zones': {'ftp': 250, 'max_hr': 185, 'threshold_hr': 165, 'resting_hr': 50}})
+    import_file(alice.user_id, SAMPLE_POWER)
+    d = alice.get('/api/trends/ride-cost').get_json()
+    assert d['reference']['ftp'] == 250 and len(d['points']) == 1
+    p = d['points'][0]
+    with app.app_context():
+        s = Session.query.filter_by(id=p['id']).one()
+        assert abs(p['expected'] - s.timer_s / 3600 * (s.norm_power / 250) ** 2 * 100) < 0.2
+    assert p['measured'] > 0 and abs(p['ratio'] - p['measured'] / p['expected'] * 100) < 0.5
+    assert p['steady'] == (p['why'] is None) and (not p['steady'] or p['rolling'] == p['ratio'])
+    # A lower FTP today makes the same watts "expected" to cost more, so the ratio falls.
+    save_user_settings(home, alice.user_id, {'zones': {'ftp': 200, 'max_hr': 185, 'threshold_hr': 165, 'resting_hr': 50}})
+    assert alice.get('/api/trends/ride-cost').get_json()['points'][0]['ratio'] < p['ratio']
+
+
+def test_a_rides_ftp_never_comes_from_a_run_file(app, home, alice, import_file):
+    """Run files carry the running-power FTP (about twice the cycling one)."""
+    from datetime import timedelta
+    from app.models import ProfileSnapshot, Session, db
+    from app.services import importer
+    run = import_file(alice.user_id)['file_id']
+    ride = import_file(alice.user_id, SAMPLE_POWER)['file_id']
+    with app.app_context():
+        ProfileSnapshot.query.filter_by(user_id=alice.user_id).delete()
+        ride_at = Session.query.filter_by(file_id=ride).first().start_time
+        db.session.add(ProfileSnapshot(file_id=ride, user_id=alice.user_id, at=ride_at - timedelta(days=30), ftp=160))
+        db.session.add(ProfileSnapshot(file_id=run, user_id=alice.user_id, at=ride_at - timedelta(days=1), ftp=320))
+        db.session.commit()
+        assert importer.resolve_zones(home, alice.user_id, {}, at=ride_at)['ftp'] == 160
+        assert importer.resolve_zones(home, alice.user_id, {'ftp': 320}, at=ride_at, ride_file=False)['ftp'] == 160
+        assert importer.resolve_zones(home, alice.user_id, {'ftp': 170}, at=ride_at)['ftp'] == 170

@@ -2,7 +2,7 @@ from datetime import date
 
 from flask import Blueprint, current_app, g, jsonify, request
 
-from ..services import fitness
+from ..services import fitness, ridecost
 from ..settings import get_user_settings
 
 trends_bp = Blueprint('trends', __name__)
@@ -100,6 +100,12 @@ def efficiency():
     start, end = _range()
     sport = request.args.get('sport', 'running')
     return jsonify({'sport': sport, 'points': fitness.efficiency_series(g.user.id, sport, start, end)})
+
+
+@trends_bp.route('/api/trends/ride-cost')
+def ride_cost():
+    start, end = _range()
+    return jsonify(ridecost.ride_cost_series(current_app.config['FITMON_HOME'], g.user.id, start, end))
 
 
 @trends_bp.route('/api/trends/swim')
