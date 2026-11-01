@@ -178,6 +178,13 @@ need it: they set `app.config['FITMON_ROUTER']` to `routing.brouter.StraightRout
   setting) drops such weights, and `importer.apply_weight_fix` rescales running power and calories
   to the nearest own weight before metrics run; the watch's figures go to `session_weight_fixes`.
   Never rescale bike power: a power meter measures it.
+- The nightly backup (`com.fitmon.backup`, 04:50) is a **root** LaunchDaemon that sends over
+  **SSH** (key `~/.ssh/fitmon_backup`), not through the `~/snorlax-homes` mount: as mike, macOS
+  privacy rules (network volumes, Local Network Privacy) made it fail every night from 2026-09-21
+  to 2026-11-01 while every manual test over SSH passed. The snapshot (`VACUUM INTO`) runs as mike
+  so root never leaves -wal/-shm files on the live DB. Don't move it back to the mount or to a
+  mike job; test a change with `launchctl kickstart`, never only over SSH
+  (`docs/fitmon-deploy.md`, "Backups to snorlax").
 - Never turn on the Werkzeug debugger (`debug=True`): other people can reach this app.
 - Bump `app/__init__.py: __version__` in every commit that changes code.
 - The top-level `fitparse.py` script is a legacy CLI that shares its name with the `fitparse/`

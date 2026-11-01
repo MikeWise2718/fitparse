@@ -166,6 +166,12 @@ ssh -t munchlax 'sudo ~/projects/fitparse/deploy/install-backup-job.sh'
 Check: Services → Backups in pokeflute, or `ssh snorlax 'ls -l ~/backups/fitmon/db'`. Log:
 `~/.fitmon/fitmon-backup.log` on munchlax.
 
+Verified 2026-11-01: the installer's run at 14:01 CET (uid 0) ended `backup ok`;
+`fitmon-7.db` on snorlax passed `PRAGMA quick_check` with 1,318 sessions, matching the live
+DB, and `users/` held the same 2,055 files as munchlax. To check a snapshot's integrity: snorlax
+has no `sqlite3` and refuses `scp`, so copy it from Windows
+(`\\snorlax\homes\mike\backups\fitmon\db\`) and open it there, then delete the copy.
+
 ## Moving an existing instance to another host
 
 Copy the runtime data rather than re-importing: it preserves trims, exclusions and the
