@@ -35,11 +35,11 @@ Run them locally first: `uv run python -m unittest discover -s tests` and
 
 | # | Task | Status |
 |---|---|---|
-| 1 | Run the test suite locally with `uv`; note what fails and whether any test needs network, Garmin credentials, local data (`~/fitparse`, snorlax) or a display | todo |
-| 2 | Rewrite `test.yml`: `actions/checkout@v4`, `astral-sh/setup-uv` (pinned major), matrix `3.12` + `3.13` (or just 3.12), `uv sync`, then the tests; drop `requirements.txt`, apt only if still needed | todo |
-| 3 | Skip or mark tests that can't run in CI (network, credentials, local files) rather than leaving CI red | todo |
-| 4 | Keep flake8's hard-error pass (E9, F63, F7, F82), or switch to `ruff check --select E9,F63,F7,F82` via `uvx ruff` | todo |
-| 5 | Optional: `paths-ignore: ['**.md', 'docs/**', 'specs/**']` so docs commits don't run CI | todo |
+| 1 | Run the test suite locally with `uv`; note what fails and whether any test needs network, Garmin credentials, local data (`~/fitparse`, snorlax) or a display | ✅ 2026-11-01: library 29/29 and fitmon 130/130 pass with uv; none needs network, credentials or a display. The fitmon swim sample `mike/11698729774_ACTIVITY.fit` is tracked in git, so CI has it. `run_tests.py` always exits 0, so CI calls unittest directly |
+| 2 | Rewrite `test.yml`: `actions/checkout@v4`, `astral-sh/setup-uv` (pinned major), matrix `3.12` + `3.13` (or just 3.12), `uv sync`, then the tests; drop `requirements.txt`, apt only if still needed | ✅ checkout@v7, setup-uv@v10.3.0 (no floating major tag), 3.12 + 3.13 without fail-fast, `uv sync --locked`, both suites; apt dropped (nothing uses PyGObject) |
+| 3 | Skip or mark tests that can't run in CI (network, credentials, local files) rather than leaving CI red | ✅ nothing to skip (see 1) |
+| 4 | Keep flake8's hard-error pass (E9, F63, F7, F82), or switch to `ruff check --select E9,F63,F7,F82` via `uvx ruff` | ✅ `uvx ruff check --select E9,F63,F7,F82 .` (clean); the warnings-only flake8 pass is dropped |
+| 5 | Optional: `paths-ignore: ['**.md', 'docs/**', 'specs/**']` so docs commits don't run CI | ✅ |
 | 6 | Push, confirm the run is green with `gh run list -L 3`, commit the spec status | todo |
 
 **Done when:** a push to `main` gives a green run and no mail.
