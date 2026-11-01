@@ -1,5 +1,7 @@
 # Fix the GitHub Actions `test` workflow
 
+Status: **done 2026-11-01.**
+
 Written 2026-11-01 from the `D:\hw\mail` session (Outlook clean-up), for a session in this repo
 to pick up.
 
@@ -40,7 +42,7 @@ Run them locally first: `uv run python -m unittest discover -s tests` and
 | 3 | Skip or mark tests that can't run in CI (network, credentials, local files) rather than leaving CI red | ✅ nothing to skip (see 1) |
 | 4 | Keep flake8's hard-error pass (E9, F63, F7, F82), or switch to `ruff check --select E9,F63,F7,F82` via `uvx ruff` | ✅ `uvx ruff check --select E9,F63,F7,F82 .` (clean); the warnings-only flake8 pass is dropped |
 | 5 | Optional: `paths-ignore: ['**.md', 'docs/**', 'specs/**']` so docs commits don't run CI | ✅ |
-| 6 | Push, confirm the run is green with `gh run list -L 3`, commit the spec status | todo |
+| 6 | Push, confirm the run is green with `gh run list -L 3`, commit the spec status | ✅ run 41342291110 on `922d9cf` green: 3.12 and 3.13 each lint clean, library 29 OK, fitmon 130 passed |
 
 **Done when:** a push to `main` gives a green run and no mail.
 
