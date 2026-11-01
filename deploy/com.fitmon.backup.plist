@@ -1,13 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  fitmon's nightly backup to snorlax, as a ROOT system LaunchDaemon: root because macOS Local
+  Network Privacy blocks a launchd job running as mike from LAN-only hosts like snorlax. The
+  script does local work as mike and only the SSH transfer as root (see run-fitmon-backup.sh).
+  Installed by deploy/install-backup-job.sh (sudo).
+-->
 <plist version="1.0">
 <dict>
     <key>Label</key><string>com.fitmon.backup</string>
-    <key>UserName</key><string>mike</string>
+    <key>UserName</key><string>root</string>
+    <key>GroupName</key><string>wheel</string>
     <key>ProgramArguments</key>
     <array><string>/bin/bash</string><string>/Users/mike/projects/fitparse/deploy/run-fitmon-backup.sh</string></array>
+    <key>WorkingDirectory</key><string>/Users/mike/projects/fitparse</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key><string>/Users/mike</string>
+        <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
     <key>StartCalendarInterval</key>
     <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>50</integer></dict>
+    <key>RunAtLoad</key><false/>
     <key>StandardOutPath</key><string>/Users/mike/.fitmon/fitmon-backup.log</string>
     <key>StandardErrorPath</key><string>/Users/mike/.fitmon/fitmon-backup.log</string>
 </dict>

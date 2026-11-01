@@ -15,7 +15,7 @@ only; it was `:8640` until 2026-09-23 — see "HTTPS front door" for why it move
 | `com.fitmon.web` | `deploy/run-fitmon-web.sh` → `fitmon-web` (Flask, reloader on, **debugger off**) | no — the reloader picks up `git pull` |
 | `com.fitmon.worker` | `deploy/run-fitmon-worker.sh` → `fitmon-worker` | **yes**, when parsing / import / sync code changed |
 | `com.fitmon.sync` (04:10) | `deploy/run-fitmon-sync.sh` → `fitmon-sync run --queue --health` | – |
-| `com.fitmon.backup` (04:50) | `deploy/run-fitmon-backup.sh` → snapshot + rsync to snorlax | – |
+| `com.fitmon.backup` (04:50, **root**) | `deploy/run-fitmon-backup.sh` → snapshot + rsync **over SSH** to snorlax | – |
 | `com.fitmon.brouter` | `deploy/brouter/run-brouter.sh` → BRouter on `127.0.0.1:8642` (KeepAlive) | no — it holds no fitmon code |
 | `com.fitmon.brouter-tiles` (2nd of the month, 03:40) | `deploy/brouter/setup-brouter.sh` → newer map tiles, then BRouter restarts itself | – |
 
@@ -46,11 +46,12 @@ done
 #    (the worker conf has no PORT; if the installer insists on probing one, install the worker
 #     plist by hand from the generated web plist - check the installer's README first)
 
-# 5. timers
-for j in sync backup; do
+# 5. timers (the backup has its own installer: see "Backups to snorlax")
+for j in sync; do
   ssh munchlax "cat > /tmp/com.fitmon.$j.plist" < deploy/com.fitmon.$j.plist
   ssh -t munchlax "sudo cp /tmp/com.fitmon.$j.plist /Library/LaunchDaemons/ && sudo launchctl bootstrap system /Library/LaunchDaemons/com.fitmon.$j.plist"
 done
+ssh -t munchlax 'sudo ~/projects/fitparse/deploy/install-backup-job.sh'
 
 # 6. register with pokeflute + verify
 deploy/deploy.sh
@@ -135,20 +136,35 @@ landing >= 0.10.1 and pokeflute >= 0.25.2.
 **Still to verify (spec task 5.3):** that a guest who reaches munchlax through a Tailscale *node
 share* can open the `tailscale serve` HTTPS name. Do this with one real guest before inviting anyone.
 
-## The snorlax mount, for backups
+## Backups to snorlax
 
-`~/snorlax-homes` is the fleet's SMB mount point on munchlax and **homeseg owns the tooling**:
-`~/scripts/snorlax-mount-retry.sh` (credentials in `~/.snorlax-smb-password`, log in
-`~/homeseg/logs/snorlax-mount.log`), plus `com.mike.snorlax-mount` to mount it at boot.
+Nightly at 04:50: a `VACUUM INTO` snapshot (one per weekday, `db/fitmon-<1..7>.db`), an rsync
+of the FIT originals and health JSON (`users/`, Garmin tokens excluded by design), and
+`settings.json`, to snorlax `/share/homes/mike/backups/fitmon/`.
 
-**The mount drops silently.** In September 2026 it was found unmounted since 4 August — seven
-weeks — with nothing noticing. So the backup script calls that same retry script when the mount
-is missing, rather than duplicating the credential handling, and only gives up if that fails.
-Verified by unmounting and running the backup: it remounted and completed.
+**It runs as root and sends over SSH**, with mike's key `~/.ssh/fitmon_backup` (alias
+`snorlax-fitmon` in munchlax's `~/.ssh/config`; the public key is in snorlax's
+`~/.ssh/authorized_keys`). Local files are handled as mike; only the transfer is root.
 
-Check it: `ssh munchlax 'mount | grep snorlax'`, and the backups themselves at
-`~/snorlax-homes/mike/backups/fitmon/` — seven rotating DB snapshots plus an rsync of the FIT
-originals. Garmin tokens are excluded by design.
+Why (changed 2026-11-01): it used to run as mike and write through the `~/snorlax-homes` SMB
+mount, and **failed every night from 2026-09-21 to 2026-11-01** with `Operation not
+permitted`. A launchd job may use a network volume only after someone clicks Allow on a macOS
+prompt shown on munchlax's screen, which nobody sees, and the grant would go to `/bin/bash`.
+SSH avoids the volume; root avoids macOS Local Network Privacy, which blocks a launchd job
+running as mike from LAN-only snorlax. Same pattern as agent-mine's backup. Manual runs over
+SSH always worked, which is why nobody noticed.
+
+**Monitored:** pokeflute checks the newest file in `db/` on snorlax every hour; a copy older
+than 26 h is a problem on its badge plus one email (`D:\hw\pokeflute\docs\backup-monitoring.md`).
+
+Install or reinstall the job (one sudo step; runs a first backup and shows the log):
+
+```
+ssh -t munchlax 'sudo ~/projects/fitparse/deploy/install-backup-job.sh'
+```
+
+Check: Services → Backups in pokeflute, or `ssh snorlax 'ls -l ~/backups/fitmon/db'`. Log:
+`~/.fitmon/fitmon-backup.log` on munchlax.
 
 ## Moving an existing instance to another host
 
