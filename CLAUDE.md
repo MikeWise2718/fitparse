@@ -2,6 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Purpose
+
+A working copy of the python-fitparse library for parsing ANT/Garmin .FIT binary files, extended
+into Mike's own fitness tooling: the generated FIT profile is kept current against Garmin's open
+Python SDK (21.218), and a Flask app ('Fitmon') sits on top of the parser to analyse activity
+files. Beyond raw parsing it covers VO2 max extraction from Garmin's unknown_140 field, a route
+library/planner, and planned weather and durability/fuelling analysis. It also ships the fitdump
+CLI for inspecting FIT files as text or JSON.
+
+- **MVP:** the upstream fitparse library parsing .FIT files into typed, scaled messages and
+  fields, plus a Flask UI that reads uploaded activity files and surfaces VO2 max.
+- **Stage:** beyond MVP (confirmed 2026-11-01).
+
 ## Project Overview
 
 python-fitparse is a Python library for parsing ANT/Garmin `.FIT` (Flexible and Interoperable Data Transfer) binary files used by fitness devices (Garmin watches, bike computers, Strava, etc.).
