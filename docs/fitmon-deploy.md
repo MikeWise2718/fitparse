@@ -168,9 +168,17 @@ Check: Services → Backups in pokeflute, or `ssh snorlax 'ls -l ~/backups/fitmo
 
 Verified 2026-11-01: the installer's run at 14:01 CET (uid 0) ended `backup ok`;
 `fitmon-7.db` on snorlax passed `PRAGMA quick_check` with 1,318 sessions, matching the live
-DB, and `users/` held the same 2,055 files as munchlax. To check a snapshot's integrity: snorlax
-has no `sqlite3` and refuses `scp`, so copy it from Windows
-(`\\snorlax\homes\mike\backups\fitmon\db\`) and open it there, then delete the copy.
+DB, and `users/` held the same 2,055 files as munchlax. To check a snapshot's integrity, run
+sqlite3 on snorlax by its full path (`/opt/bin` is not on the PATH of an SSH command, so
+`which sqlite3` finds nothing; an earlier version of this note wrongly said snorlax has none):
+
+```
+ssh snorlax '/opt/bin/sqlite3 -readonly ~/backups/fitmon/db/fitmon-7.db "PRAGMA quick_check"'
+```
+
+From spearow, where plain `ssh snorlax` works. **Not from munchlax** with plain `ssh snorlax`:
+its default key is refused and a couple of failures get munchlax banned for ~5 minutes
+(skill `hosts`, Snorlax).
 
 ## Moving an existing instance to another host
 
