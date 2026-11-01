@@ -23,7 +23,7 @@ echo "installed com.fitmon.backup; first backup now (takes ~1 min):"
 launchctl kickstart system/com.fitmon.backup
 for _ in $(seq 1 24); do
     sleep 5
-    if tail -1 "$LOG" | grep -q "^backup ok|failed|denied|Error"; then break; fi\|^Error\|failed\|denied"; then break; fi
+    if tail -1 "$LOG" | grep -qE '^backup ok|Error|failed|denied'; then break; fi
 done
 # Only this run's lines (from its last "===" header): older failures stay in the log.
 awk '/^=== /{buf=""} {buf=buf $0 "\n"} END{printf "%s", buf}' "$LOG"
