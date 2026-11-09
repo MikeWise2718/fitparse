@@ -5,8 +5,9 @@ const $ = (id) => document.getElementById(id);
 const state = {csrf: window.FITMON.csrf, user: window.FITMON.user, settings: null, view: null,
                session: null, charts: {}, map: null, act: {offset: 0, sort: 'start_time', dir: 'desc'},
                exp: {file: null, message: null, page: 1}, poll: null};
-const SPORT_COLORS = {running: '#e4572e', cycling: '#0b6bcb', swimming: '#17a2b8', training: '#7d4cdb',
-                      walking: '#d98e04', hiking: '#6a994e', fitness_equipment: '#7d4cdb', transition: '#8a93a6'};
+// Strength is pink, not purple: purple is the app's theme colour (matches --strength in style.css).
+const SPORT_COLORS = {running: '#e4572e', cycling: '#0b6bcb', swimming: '#17a2b8', training: '#d6409f',
+                      walking: '#d98e04', hiking: '#6a994e', fitness_equipment: '#d6409f', transition: '#8a93a6'};
 const color = (sport, i = 0) => SPORT_COLORS[sport] || ['#8a93a6', '#c05299', '#2a9d8f', '#e9c46a'][i % 4];
 
 // ---------------------------------------------------------------- plumbing
@@ -365,7 +366,7 @@ async function drawCalendar(step = 0) {
     for (let t = first; t.getUTCFullYear() === year; t = new Date(t.getTime() + 86400000)) {
         const key = t.toISOString().slice(0, 10), c = byDay[key];
         const a = c ? 0.2 + 0.8 * Math.min(1, (c.load || 0) / top) : 0;
-        cells += `<i title="${key}${c ? ` · ${c.hours} h · load ${c.load}` : ''}" style="${c ? `background:rgba(11,107,203,${a})` : ''}"></i>`;
+        cells += `<i title="${key}${c ? ` · ${c.hours} h · load ${c.load}` : ''}" style="${c ? `background:color-mix(in srgb, var(--accent) ${Math.round(a * 100)}%, transparent)` : ''}"></i>`;
     }
     $('dash-calendar').innerHTML = cells; $('dash-cal-year').textContent = `${year} · ${cal.days.length} days`;
     $('dash-cal-next').disabled = year >= now;

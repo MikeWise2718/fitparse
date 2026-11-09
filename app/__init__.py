@@ -7,7 +7,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from flask.json.provider import DefaultJSONProvider
 
-__version__ = '0.8.5'
+__version__ = '0.9.0'
 
 
 class _IsoJSONProvider(DefaultJSONProvider):

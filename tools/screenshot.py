@@ -188,7 +188,7 @@ DEMO_BADGE = """() => { const b = document.createElement('div'); b.textContent =
 
 # The invented year has session summaries but no second-by-second samples, so these Trends
 # panels would show as empty. A capture leaves them out; for a real user they hold data.
-TRENDS_NEEDS_SAMPLES = ['tr-power-chart', 'tr-best-table', 'tr-eff-chart', 'tr-strength-chart']
+TRENDS_NEEDS_SAMPLES = ['tr-power-chart', 'tr-best-table', 'tr-eff-chart', 'tr-strength-chart', 'tr-cost-chart']
 
 
 def capture_still(browser, base: str, password: str, view: str, out: Path, hide: list | None = None) -> None:
