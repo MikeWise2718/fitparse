@@ -492,7 +492,7 @@ gets an account until A.1–A.5 and the Tailscale HTTPS front (5.3) are done.
 
 ---
 
-### 8.2 Build log - 2026-09-22 to 2026-11-09 (v0.4.4 - v0.9.0)
+### 8.2 Build log - 2026-09-22 to 2026-11-10 (v0.4.4 - v0.9.1)
 
 Versions before 0.4.4 are in `git log`. From there, all deployed to munchlax:
 
@@ -531,6 +531,7 @@ Versions before 0.4.4 are in `git log`. From there, all deployed to munchlax:
 | 0.8.4 | Fix: a chart left in full screen when the page changed (a click on one of its points opens the activity) left a grey layer over everything. Changing page now closes full screen, and the dimming is the panel's own shadow, so it cannot outlive it |
 | 0.8.5 | Fix: on bar charts over several years the year lines sat in July (an offset gridline goes halfway to the previous tick left standing, and only Januaries were left), so the last months read as the next year. Bar charts now keep every tick, unlabelled and with an invisible line between marks |
 | 0.9.0 | Two-tone purple theme after ccfleet's two-tone green: deep violet header band (#2e1065, same in light and dark), lavender page, filter bar and table heads, violet accent (#6d28d9 / #a78bfa dark); form controls take the accent. Strength moved from purple to pink (#d6409f) so it does not read as theme colour; the training-days calendar shades in the accent. Landing pictures retaken (the playback animation unchanged; Cost per watt hidden there, the demo has no samples) |
+| 0.9.1 | Fix: the header Sync button was white on white in light mode (buttons inherit the text colour but sit on the panel colour, and the header text is now near-white). Header buttons get the band's style: transparent, light text, lilac outline. A contrast check of every button, input, select and tag on all pages in light and dark found no other case |
 
 Data corrections made on munchlax 2026-10-15: the 70.3 run leg trimmed at the official split
 3:10:01; a 2022 gravel ride saved as a run changed to cycling (it held the 400 m / 1 km / mile
